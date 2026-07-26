@@ -13,7 +13,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="font-sans">
         <Sidebar />
         <main className="lg:pl-60">
-          <div className="max-w-5xl mx-auto px-5 pb-10 pt-[72px] lg:pt-8 lg:px-8">{children}</div>
+          <div className="max-w-[1400px] mx-auto px-4 sm:px-5 pb-10 pt-[64px] lg:pt-8 lg:px-8">{children}</div>
         </main>
       </body>
     </html>

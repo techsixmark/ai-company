@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import type { Department, Profile, Task, TaskApprovedFile, TaskHistoryEntry } from "@/lib/types";
-import { DepartmentBadge, StatusBadge } from "@/components/Badges";
+import { DepartmentBadge, StatusBadge, DueDateBadge } from "@/components/Badges";
 import { buildAndDownloadDocx, buildExportData, buildMarkdown, downloadTextFile, exportFileBaseName } from "@/lib/export";
 import { uploadTaskFile } from "@/lib/upload";
 
@@ -30,6 +30,7 @@ export default function TaskDetailPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [myId, setMyId] = useState<string | null>(null);
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [runningAll, setRunningAll] = useState(false);
@@ -53,6 +54,7 @@ export default function TaskDetailPage() {
     }
     setLoggedIn(true);
     const user = sessionData.session.user;
+    setMyId(user.id);
     const [{ data: t }, { data: p }, { data: depts }, { data: children }, { data: allProfiles }, { data: hist }, { data: files }] = await Promise.all([
       supabase.from("tasks").select("*").eq("id", id).single(),
       supabase.from("profiles").select("*").eq("id", user.id).single(),
@@ -222,6 +224,16 @@ export default function TaskDetailPage() {
     await load();
   }
 
+  async function saveMeta(patch: Record<string, any>) {
+    setError(null);
+    const res = await authedFetch(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+    if (!res.ok) {
+      setError((await res.json()).error);
+      return;
+    }
+    await load();
+  }
+
   // Xuất kết quả task — gộp đầy đủ: mô tả, outcome, hỏi-đáp, phản hồi, và (với task CEO) kết quả thật của từng phòng ban
   const exportData = task ? buildExportData(task, subtasks, departments, profiles) : null;
 
@@ -254,10 +266,11 @@ export default function TaskDetailPage() {
   if (!task) return <p className="text-sm text-ink-muted">Đang tải...</p>;
 
   const isAdmin = profile?.role === "admin";
+  const canEditMeta = isAdmin || task.created_by === myId;
   const pendingSubtasks = subtasks.filter((s) => s.status === "pending" || s.status === "revise").length;
 
   return (
-    <div className="max-w-2xl space-y-5">
+    <div className="space-y-4">
       {task.parent_task_id && (
         <Link href={`/tasks/${task.parent_task_id}`} className="text-xs text-series-2 font-semibold">
           ← Về mục tiêu CEO
@@ -265,244 +278,306 @@ export default function TaskDetailPage() {
       )}
 
       <div>
-        <div className="flex items-center gap-2 mb-2">
+        <div className="flex items-center gap-2 mb-2 flex-wrap">
           <DepartmentBadge department={dept(task.department_id)} />
           <StatusBadge status={task.status} />
+          <DueDateBadge dueDate={task.due_date} done={task.status === "done"} />
+          {task.auto_retry && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-status-warning/15 text-status-warning">
+              ⏳ Chờ tự động thử lại
+            </span>
+          )}
         </div>
         <h1 className="text-lg font-semibold">{task.title}</h1>
       </div>
 
-      <div className="card space-y-2">
-        <div className="text-xs text-ink-muted">Mô tả / kỳ vọng đầu ra</div>
-        <p className="text-sm whitespace-pre-wrap">{task.description}</p>
-        {task.input_file && <p className="text-xs text-ink-muted">File input liên quan: {task.input_file}</p>}
-      </div>
-
-      {task.expected_outcome && (
-        <div className="card space-y-2 border-l-4 !border-l-status-good">
-          <div className="text-xs text-ink-muted">✓ Outcome đã xác nhận khi giao việc</div>
-          <p className="text-sm whitespace-pre-wrap">{task.expected_outcome}</p>
-        </div>
-      )}
-
-      {Array.isArray(task.clarify_qa) && task.clarify_qa.length > 0 && (
-        <details className="card !py-3">
-          <summary className="text-xs text-ink-muted cursor-pointer select-none">
-            Hỏi-đáp làm rõ yêu cầu ({task.clarify_qa.length})
-          </summary>
-          <div className="mt-2 space-y-1.5 text-sm">
-            {task.clarify_qa.map((x, i) => (
-              <div key={i}>
-                <span className="text-ink-muted">{x.question}</span>{" "}
-                <span className="font-medium">{x.answer?.trim() || "(bỏ qua)"}</span>
-              </div>
-            ))}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5 items-start">
+        {/* ---- Cột nội dung chính ---- */}
+        <div className="space-y-5 min-w-0">
+          <div className="card space-y-2">
+            <div className="text-xs text-ink-muted">Mô tả / kỳ vọng đầu ra</div>
+            <p className="text-sm whitespace-pre-wrap">{task.description}</p>
+            {task.input_file && <p className="text-xs text-ink-muted">File input liên quan: {task.input_file}</p>}
           </div>
-        </details>
-      )}
 
-      {task.feedback && task.status === "revise" && (
-        <div className="bg-status-critical/10 border border-status-critical/30 rounded-lg p-4">
-          <div className="text-xs text-status-critical font-medium mb-1">Yêu cầu chỉnh sửa</div>
-          <p className="text-sm whitespace-pre-wrap">{task.feedback}</p>
-        </div>
-      )}
+          {task.expected_outcome && (
+            <div className="card space-y-2 border-l-4 !border-l-status-good">
+              <div className="text-xs text-ink-muted">✓ Outcome đã xác nhận khi giao việc</div>
+              <p className="text-sm whitespace-pre-wrap">{task.expected_outcome}</p>
+            </div>
+          )}
 
-      {(task.status === "pending" || task.status === "revise") && (
-        <button onClick={runAgent} disabled={busy} className="btn-primary">
-          {busy
-            ? isCeoTask ? "CEO đang phân việc..." : "Agent đang xử lý..."
-            : task.status === "revise"
-              ? isCeoTask ? "CEO phân việc lại theo phản hồi" : "Chạy lại theo phản hồi"
-              : isCeoTask ? "CEO phân tích & giao việc" : "Giao cho agent xử lý"}
-        </button>
-      )}
-
-      {task.result_text && (
-        <div className="card space-y-2">
-          <div className="flex items-center justify-between gap-2 relative">
-            <div className="text-xs text-ink-muted">{isCeoTask ? "Kế hoạch phân việc của CEO" : "Kết quả từ agent"}</div>
-            <div className="flex items-center gap-3">
-              {isAdmin && !editingResult && (
-                <button onClick={startEditResult} className="text-xs font-semibold text-ink-secondary hover:underline">
-                  ✎ Sửa tay
-                </button>
-              )}
-              <div>
-                <button
-                  onClick={() => setExportOpen(!exportOpen)}
-                  disabled={exporting}
-                  className="text-xs font-semibold text-series-1 hover:underline flex items-center gap-1 disabled:opacity-50"
-                >
-                  {exporting ? "Đang tạo file..." : "⬇ Xuất file"} {!exporting && "▾"}
-                </button>
-                {exportOpen && (
-                  <div className="absolute right-0 top-6 z-10 bg-white border border-black/10 rounded-lg shadow-lg py-1 w-44 text-sm">
-                    <button onClick={exportMd} className="w-full text-left px-3 py-1.5 hover:bg-black/5">Markdown (.md)</button>
-                    <button onClick={exportDocx} className="w-full text-left px-3 py-1.5 hover:bg-black/5">Word (.docx)</button>
-                    <button onClick={exportPdf} className="w-full text-left px-3 py-1.5 hover:bg-black/5">In / Lưu PDF</button>
+          {Array.isArray(task.clarify_qa) && task.clarify_qa.length > 0 && (
+            <details className="card !py-3">
+              <summary className="text-xs text-ink-muted cursor-pointer select-none">
+                Hỏi-đáp làm rõ yêu cầu ({task.clarify_qa.length})
+              </summary>
+              <div className="mt-2 space-y-1.5 text-sm">
+                {task.clarify_qa.map((x, i) => (
+                  <div key={i}>
+                    <span className="text-ink-muted">{x.question}</span>{" "}
+                    <span className="font-medium">{x.answer?.trim() || "(bỏ qua)"}</span>
                   </div>
-                )}
+                ))}
               </div>
-            </div>
-          </div>
-          {editingResult ? (
-            <div className="space-y-2">
-              <textarea
-                rows={10}
-                className="w-full border border-black/10 rounded-md px-3 py-2 text-sm"
-                value={editResultText}
-                onChange={(e) => setEditResultText(e.target.value)}
-              />
-              <div className="flex gap-2">
-                <button onClick={saveEditedResult} disabled={savingResult} className="btn-good !px-4 !py-1.5 !text-xs">
-                  {savingResult ? "Đang lưu..." : "Lưu chỉnh sửa"}
-                </button>
-                <button onClick={() => setEditingResult(false)} disabled={savingResult} className="btn-ghost !px-4 !py-1.5 !text-xs">
-                  Hủy
-                </button>
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm whitespace-pre-wrap">{task.result_text}</p>
+            </details>
           )}
-        </div>
-      )}
 
-      {isCeoTask && subtasks.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Task đã giao cho phòng ban ({subtasks.length})</h2>
-            {pendingSubtasks > 0 && (
-              <button
-                onClick={runAllSubtasks}
-                disabled={runningAll}
-                className="btn-primary !px-4 !py-1.5 !text-xs"
-              >
-                {runningAll ? "Đang chạy các phòng ban..." : `Chạy tất cả (${pendingSubtasks})`}
-              </button>
-            )}
-          </div>
-          <div className="card !p-0 divide-y divide-black/5">
-            {subtasks.map((s) => (
-              <Link key={s.id} href={`/tasks/${s.id}`} className="flex items-center justify-between px-4 py-2.5 text-sm hover:bg-black/[0.02]">
-                <span className="font-medium">{s.title}</span>
-                <span className="flex items-center gap-2 flex-none ml-3">
-                  <DepartmentBadge department={dept(s.department_id)} />
-                  <StatusBadge status={s.status} />
-                </span>
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
+          {task.feedback && task.status === "revise" && (
+            <div className="bg-status-critical/10 border border-status-critical/30 rounded-lg p-4">
+              <div className="text-xs text-status-critical font-medium mb-1">Yêu cầu chỉnh sửa</div>
+              <p className="text-sm whitespace-pre-wrap">{task.feedback}</p>
+            </div>
+          )}
 
-      {task.status === "review" && isAdmin && (
-        <div className="card space-y-2">
-          <div className="text-xs text-ink-muted">{isCeoTask ? "Đánh giá kế hoạch phân việc" : "Đánh giá kết quả"}</div>
-          <div className="flex gap-2">
-            <button onClick={() => updateStatus("done")} disabled={busy} className="btn-good">
-              Duyệt
-            </button>
-          </div>
-          <textarea
-            rows={3}
-            placeholder={isCeoTask ? "Góp ý để CEO phân việc lại..." : "Ghi rõ cần chỉnh sửa gì..."}
-            className="w-full border border-black/10 rounded-md px-3 py-2 text-sm"
-            value={feedback}
-            onChange={(e) => setFeedback(e.target.value)}
-          />
-          <div className="flex items-center gap-2 flex-wrap">
-            <label className="text-xs font-semibold text-ink-secondary border border-black/10 rounded-full px-3 py-1.5 cursor-pointer hover:bg-black/5">
-              📎 {feedbackFile ? feedbackFile.name : "Đính kèm file tham khảo"}
-              <input
-                type="file"
-                className="hidden"
-                onChange={(e) => setFeedbackFile(e.target.files?.[0] || null)}
-              />
-            </label>
-            {feedbackFile && (
-              <button onClick={() => setFeedbackFile(null)} className="text-xs text-ink-muted hover:underline">Bỏ file</button>
-            )}
-          </div>
-          <button onClick={submitFeedback} disabled={busy || !feedback} className="btn-ghost">
-            {busy ? "Đang gửi..." : "Yêu cầu chỉnh sửa"}
-          </button>
-        </div>
-      )}
+          {task.last_error && task.status !== "review" && task.status !== "done" && (
+            <div className="bg-status-warning/10 border border-status-warning/30 rounded-lg p-4">
+              <div className="text-xs text-status-warning font-medium mb-1">
+                {task.auto_retry ? "Lần chạy gần nhất lỗi (hết quota/rate-limit) — sẽ tự động thử lại" : "Lần chạy gần nhất lỗi"}
+              </div>
+              <p className="text-sm whitespace-pre-wrap line-clamp-4">{task.last_error}</p>
+            </div>
+          )}
 
-      {(isAdmin || approvedFiles.length > 0) && (
-        <div className="card space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-ink-muted">📁 File deliverable đã duyệt ({approvedFiles.length})</div>
-            {isAdmin && (
-              <label className="text-xs font-semibold text-series-1 hover:underline cursor-pointer">
-                {uploadingApproved ? "Đang tải lên..." : "+ Thêm file"}
-                <input
-                  type="file"
-                  className="hidden"
-                  disabled={uploadingApproved}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) uploadApprovedFile(f);
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-            )}
-          </div>
-          {approvedFiles.length > 0 ? (
-            <div className="divide-y divide-black/5">
-              {approvedFiles.map((f) => (
-                <div key={f.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-                  <a href={f.file_url} target="_blank" rel="noopener noreferrer" className="font-medium text-series-1 hover:underline truncate">
-                    📄 {f.file_name}
-                  </a>
-                  <span className="text-xs text-ink-muted flex-none flex items-center gap-2">
-                    {formatBytes(f.file_size)} · {userName(f.uploaded_by)} · {new Date(f.created_at).toLocaleDateString("vi-VN")}
-                    {isAdmin && (
-                      <button onClick={() => deleteApprovedFile(f.id)} className="text-status-critical hover:underline">Xóa</button>
+          {task.result_text && (
+            <div className="card space-y-2">
+              <div className="flex items-center justify-between gap-2 relative">
+                <div className="text-xs text-ink-muted">{isCeoTask ? "Kế hoạch phân việc của CEO" : "Kết quả từ agent"}</div>
+                <div className="flex items-center gap-3">
+                  {isAdmin && !editingResult && (
+                    <button onClick={startEditResult} className="text-xs font-semibold text-ink-secondary hover:underline">
+                      ✎ Sửa tay
+                    </button>
+                  )}
+                  <div>
+                    <button
+                      onClick={() => setExportOpen(!exportOpen)}
+                      disabled={exporting}
+                      className="text-xs font-semibold text-series-1 hover:underline flex items-center gap-1 disabled:opacity-50"
+                    >
+                      {exporting ? "Đang tạo file..." : "⬇ Xuất file"} {!exporting && "▾"}
+                    </button>
+                    {exportOpen && (
+                      <div className="absolute right-0 top-6 z-10 bg-white border border-black/10 rounded-lg shadow-lg py-1 w-44 text-sm">
+                        <button onClick={exportMd} className="w-full text-left px-3 py-1.5 hover:bg-black/5">Markdown (.md)</button>
+                        <button onClick={exportDocx} className="w-full text-left px-3 py-1.5 hover:bg-black/5">Word (.docx)</button>
+                        <button onClick={exportPdf} className="w-full text-left px-3 py-1.5 hover:bg-black/5">In / Lưu PDF</button>
+                      </div>
                     )}
-                  </span>
+                  </div>
                 </div>
-              ))}
+              </div>
+              {editingResult ? (
+                <div className="space-y-2">
+                  <textarea
+                    rows={10}
+                    className="w-full border border-black/10 rounded-md px-3 py-2 text-sm"
+                    value={editResultText}
+                    onChange={(e) => setEditResultText(e.target.value)}
+                  />
+                  <div className="flex gap-2">
+                    <button onClick={saveEditedResult} disabled={savingResult} className="btn-good !px-4 !py-1.5 !text-xs">
+                      {savingResult ? "Đang lưu..." : "Lưu chỉnh sửa"}
+                    </button>
+                    <button onClick={() => setEditingResult(false)} disabled={savingResult} className="btn-ghost !px-4 !py-1.5 !text-xs">
+                      Hủy
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm whitespace-pre-wrap">{task.result_text}</p>
+              )}
             </div>
-          ) : (
-            <p className="text-xs text-ink-muted">Chưa có file nào — tải lên file cuối cùng đã hoàn thiện để lưu trữ.</p>
           )}
-        </div>
-      )}
 
-      {task.status === "review" && !isAdmin && (
-        <p className="text-xs text-ink-muted">Đang chờ Admin duyệt.</p>
-      )}
-
-      {history.length > 0 && (
-        <details className="card !py-3">
-          <summary className="text-xs text-ink-muted cursor-pointer select-none">
-            Lịch sử phản hồi & chỉnh sửa ({history.length})
-          </summary>
-          <div className="mt-3 space-y-3">
-            {history.map((h) => (
-              <div key={h.id} className="border-l-2 border-black/10 pl-3">
-                <div className="flex items-center gap-2 text-xs text-ink-muted mb-1">
-                  <span className="font-semibold text-ink">{HISTORY_LABEL[h.type] || h.type}</span>
-                  <span>· {userName(h.created_by)}</span>
-                  <span>· {new Date(h.created_at).toLocaleString("vi-VN")}</span>
-                </div>
-                <p className="text-sm whitespace-pre-wrap line-clamp-6">{h.content}</p>
-                {h.file_url && (
-                  <a href={h.file_url} target="_blank" rel="noopener noreferrer" className="text-xs text-series-1 hover:underline">
-                    📎 {h.file_name || "File đính kèm"}
-                  </a>
+          {isCeoTask && subtasks.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold">Task đã giao cho phòng ban ({subtasks.length})</h2>
+                {pendingSubtasks > 0 && (
+                  <button
+                    onClick={runAllSubtasks}
+                    disabled={runningAll}
+                    className="btn-primary !px-4 !py-1.5 !text-xs"
+                  >
+                    {runningAll ? "Đang chạy các phòng ban..." : `Chạy tất cả (${pendingSubtasks})`}
+                  </button>
                 )}
               </div>
-            ))}
-          </div>
-        </details>
-      )}
+              <div className="card !p-0 divide-y divide-black/5">
+                {subtasks.map((s) => (
+                  <Link key={s.id} href={`/tasks/${s.id}`} className="flex items-center justify-between px-4 py-2.5 text-sm hover:bg-black/[0.02] gap-2">
+                    <span className="font-medium truncate">{s.title}</span>
+                    <span className="flex items-center gap-2 flex-none ml-3">
+                      <DueDateBadge dueDate={s.due_date} done={s.status === "done"} />
+                      <DepartmentBadge department={dept(s.department_id)} />
+                      <StatusBadge status={s.status} />
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
 
-      {error && <p className="text-status-critical text-sm">{error}</p>}
+          {history.length > 0 && (
+            <details className="card !py-3">
+              <summary className="text-xs text-ink-muted cursor-pointer select-none">
+                Lịch sử phản hồi & chỉnh sửa ({history.length})
+              </summary>
+              <div className="mt-3 space-y-3">
+                {history.map((h) => (
+                  <div key={h.id} className="border-l-2 border-black/10 pl-3">
+                    <div className="flex items-center gap-2 text-xs text-ink-muted mb-1 flex-wrap">
+                      <span className="font-semibold text-ink">{HISTORY_LABEL[h.type] || h.type}</span>
+                      <span>· {userName(h.created_by)}</span>
+                      <span>· {new Date(h.created_at).toLocaleString("vi-VN")}</span>
+                    </div>
+                    <p className="text-sm whitespace-pre-wrap line-clamp-6">{h.content}</p>
+                    {h.file_url && (
+                      <a href={h.file_url} target="_blank" rel="noopener noreferrer" className="text-xs text-series-1 hover:underline">
+                        📎 {h.file_name || "File đính kèm"}
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+
+          {error && <p className="text-status-critical text-sm">{error}</p>}
+        </div>
+
+        {/* ---- Cột phải: trạng thái & hành động ---- */}
+        <div className="space-y-4 lg:sticky lg:top-6">
+          <div className="card space-y-3">
+            <div className="text-xs text-ink-muted">Chi tiết</div>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-ink-muted">Hạn chót</span>
+                {canEditMeta ? (
+                  <input
+                    type="date"
+                    className="border border-black/10 rounded-md px-2 py-1 text-xs"
+                    value={task.due_date || ""}
+                    onChange={(e) => saveMeta({ due_date: e.target.value || null })}
+                  />
+                ) : (
+                  <span className="font-medium">{task.due_date ? new Date(task.due_date + "T00:00:00").toLocaleDateString("vi-VN") : "—"}</span>
+                )}
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-ink-muted">Phụ trách</span>
+                {canEditMeta ? (
+                  <select
+                    className="border border-black/10 rounded-md px-2 py-1 text-xs max-w-[140px]"
+                    value={task.assignee_id || ""}
+                    onChange={(e) => saveMeta({ assignee_id: e.target.value || null })}
+                  >
+                    <option value="">— Chưa chọn —</option>
+                    {profiles.map((p) => (
+                      <option key={p.id} value={p.id}>{p.full_name || p.email}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="font-medium truncate max-w-[140px]">{task.assignee_id ? userName(task.assignee_id) : "—"}</span>
+                )}
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-ink-muted">Người giao</span>
+                <span className="font-medium truncate max-w-[140px]">{userName(task.created_by)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-ink-muted">Ngày tạo</span>
+                <span className="font-medium">{new Date(task.created_at).toLocaleDateString("vi-VN")}</span>
+              </div>
+            </div>
+          </div>
+
+          {(task.status === "pending" || task.status === "revise") && (
+            <button onClick={runAgent} disabled={busy} className="btn-primary w-full">
+              {busy
+                ? isCeoTask ? "CEO đang phân việc..." : "Agent đang xử lý..."
+                : task.status === "revise"
+                  ? isCeoTask ? "CEO phân việc lại theo phản hồi" : "Chạy lại theo phản hồi"
+                  : isCeoTask ? "CEO phân tích & giao việc" : "Giao cho agent xử lý"}
+            </button>
+          )}
+
+          {task.status === "review" && isAdmin && (
+            <div className="card space-y-2">
+              <div className="text-xs text-ink-muted">{isCeoTask ? "Đánh giá kế hoạch phân việc" : "Đánh giá kết quả"}</div>
+              <button onClick={() => updateStatus("done")} disabled={busy} className="btn-good w-full">
+                Duyệt
+              </button>
+              <textarea
+                rows={3}
+                placeholder={isCeoTask ? "Góp ý để CEO phân việc lại..." : "Ghi rõ cần chỉnh sửa gì..."}
+                className="w-full border border-black/10 rounded-md px-3 py-2 text-sm"
+                value={feedback}
+                onChange={(e) => setFeedback(e.target.value)}
+              />
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className="text-xs font-semibold text-ink-secondary border border-black/10 rounded-full px-3 py-1.5 cursor-pointer hover:bg-black/5">
+                  📎 {feedbackFile ? feedbackFile.name : "Đính kèm file tham khảo"}
+                  <input type="file" className="hidden" onChange={(e) => setFeedbackFile(e.target.files?.[0] || null)} />
+                </label>
+                {feedbackFile && (
+                  <button onClick={() => setFeedbackFile(null)} className="text-xs text-ink-muted hover:underline">Bỏ file</button>
+                )}
+              </div>
+              <button onClick={submitFeedback} disabled={busy || !feedback} className="btn-ghost w-full">
+                {busy ? "Đang gửi..." : "Yêu cầu chỉnh sửa"}
+              </button>
+            </div>
+          )}
+
+          {task.status === "review" && !isAdmin && (
+            <p className="text-xs text-ink-muted">Đang chờ Admin duyệt.</p>
+          )}
+
+          {(isAdmin || approvedFiles.length > 0) && (
+            <div className="card space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-xs text-ink-muted">📁 File đã duyệt ({approvedFiles.length})</div>
+                {isAdmin && (
+                  <label className="text-xs font-semibold text-series-1 hover:underline cursor-pointer">
+                    {uploadingApproved ? "Đang tải..." : "+ Thêm"}
+                    <input
+                      type="file"
+                      className="hidden"
+                      disabled={uploadingApproved}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) uploadApprovedFile(f);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
+              {approvedFiles.length > 0 ? (
+                <div className="divide-y divide-black/5">
+                  {approvedFiles.map((f) => (
+                    <div key={f.id} className="py-2 text-sm space-y-0.5">
+                      <a href={f.file_url} target="_blank" rel="noopener noreferrer" className="font-medium text-series-1 hover:underline block truncate">
+                        📄 {f.file_name}
+                      </a>
+                      <span className="text-[11px] text-ink-muted flex items-center gap-1.5 flex-wrap">
+                        {formatBytes(f.file_size)} · {userName(f.uploaded_by)} · {new Date(f.created_at).toLocaleDateString("vi-VN")}
+                        {isAdmin && (
+                          <button onClick={() => deleteApprovedFile(f.id)} className="text-status-critical hover:underline">Xóa</button>
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-ink-muted">Chưa có file — tải lên file cuối cùng đã hoàn thiện để lưu trữ.</p>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Chỉ hiện khi in (window.print) — CSS trong globals.css ẩn phần còn lại của trang */}
       {exportData && (

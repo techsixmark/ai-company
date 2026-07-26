@@ -59,6 +59,17 @@ export interface Task {
   feedback: string | null;
   created_by: string;
   parent_task_id: string | null;
+  due_date: string | null;
+  assignee_id: string | null;
+  auto_retry: boolean;
+  last_error: string | null;
+  next_retry_at: string | null;
   created_at: string;
+  updated_at: string;
+}
+
+export interface CompanySettings {
+  id: boolean;
+  monthly_budget_usd: number | null;
   updated_at: string;
 }

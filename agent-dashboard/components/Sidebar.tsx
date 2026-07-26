@@ -109,6 +109,7 @@ export default function Sidebar() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
     async function load() {
@@ -125,6 +126,25 @@ export default function Sidebar() {
     const { data: sub } = supabase.auth.onAuthStateChange(() => load());
     return () => sub.subscription.unsubscribe();
   }, []);
+
+  // Badge "cần xử lý": Admin thấy số task chờ duyệt, Member thấy số task của mình cần chạy lại
+  useEffect(() => {
+    if (!profile) {
+      setPendingCount(0);
+      return;
+    }
+    async function loadPendingCount() {
+      const query =
+        profile!.role === "admin"
+          ? supabase.from("tasks").select("id", { count: "exact", head: true }).eq("status", "review")
+          : supabase.from("tasks").select("id", { count: "exact", head: true }).eq("status", "revise").eq("created_by", profile!.id);
+      const { count } = await query;
+      setPendingCount(count || 0);
+    }
+    loadPendingCount();
+    const interval = setInterval(loadPendingCount, 45000);
+    return () => clearInterval(interval);
+  }, [profile]);
 
   useEffect(() => {
     setMobileOpen(false);
@@ -180,7 +200,12 @@ export default function Sidebar() {
               }`}
             >
               <span className={active ? "text-ink" : "text-ink-muted"}><Icon /></span>
-              {label}
+              <span className="flex-1">{label}</span>
+              {href === "/tasks" && pendingCount > 0 && (
+                <span className="text-[10px] font-bold text-white bg-status-critical rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                  {pendingCount > 99 ? "99+" : pendingCount}
+                </span>
+              )}
             </Link>
           );
         })}
@@ -218,8 +243,9 @@ export default function Sidebar() {
     <>
       {/* Mobile top bar */}
       <header className="lg:hidden fixed top-0 inset-x-0 z-40 bg-white border-b border-black/[0.07] flex items-center gap-3 px-4 h-[52px]">
-        <button className="p-1.5 -ml-1.5 rounded-md hover:bg-black/[0.05]" onClick={() => setMobileOpen(true)} aria-label="Mở menu">
+        <button className="relative p-1.5 -ml-1.5 rounded-md hover:bg-black/[0.05]" onClick={() => setMobileOpen(true)} aria-label="Mở menu">
           <IconMenu />
+          {pendingCount > 0 && <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-status-critical" />}
         </button>
         <Link href="/" className="flex items-center gap-2 font-bold text-sm tracking-tight">
           <span className="w-2.5 h-2.5 rounded-full bg-series-2 inline-block" />

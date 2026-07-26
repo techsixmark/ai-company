@@ -5,12 +5,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import type { Department, Task, TaskStatus } from "@/lib/types";
-import { StatusBadge, DEPT_EMOJI, seriesColor } from "@/components/Badges";
+import { StatusBadge, DueDateBadge, DEPT_EMOJI, seriesColor } from "@/components/Badges";
 
 export default function TasksPage() {
   const router = useRouter();
   const [departments, setDepartments] = useState<Department[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [historyByTask, setHistoryByTask] = useState<Map<string, string>>(new Map());
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
   const [statusFilter, setStatusFilter] = useState<TaskStatus | "">("");
   const [search, setSearch] = useState("");
@@ -39,9 +40,10 @@ export default function TasksPage() {
         return;
       }
       setLoggedIn(true);
-      const [{ data: depts }, { data: tks }] = await Promise.all([
+      const [{ data: depts }, { data: tks }, { data: hist }] = await Promise.all([
         supabase.from("departments").select("*").order("color_slot"),
         supabase.from("tasks").select("*").order("created_at", { ascending: false }),
+        supabase.from("task_history").select("task_id, content"),
       ]);
       // CEO đứng đầu bảng Kanban
       const sorted = ((depts as Department[]) || []).sort((a, b) =>
@@ -49,18 +51,25 @@ export default function TasksPage() {
       );
       setDepartments(sorted);
       setTasks((tks as Task[]) || []);
+      // Gộp toàn bộ nội dung comment/phản hồi của từng task thành 1 chuỗi để tìm kiếm
+      const map = new Map<string, string>();
+      ((hist as { task_id: string; content: string }[]) || []).forEach((h) => {
+        map.set(h.task_id, `${map.get(h.task_id) || ""} ${h.content}`);
+      });
+      setHistoryByTask(map);
     }
     load();
   }, []);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return tasks.filter(
-      (t) =>
-        (!statusFilter || t.status === statusFilter) &&
-        (!q || t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q))
-    );
-  }, [tasks, statusFilter, search]);
+    return tasks.filter((t) => {
+      if (statusFilter && t.status !== statusFilter) return false;
+      if (!q) return true;
+      const haystack = `${t.title} ${t.description} ${t.result_text || ""} ${t.expected_outcome || ""} ${historyByTask.get(t.id) || ""}`.toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [tasks, statusFilter, search, historyByTask]);
 
   if (loggedIn === false) {
     return (
@@ -148,7 +157,12 @@ export default function TasksPage() {
                         <td className="px-4 py-2.5 text-ink-secondary max-w-[240px] truncate">
                           {t.expected_outcome ? t.expected_outcome.replace(/\n/g, " · ") : "—"}
                         </td>
-                        <td className="px-4 py-2.5"><StatusBadge status={t.status} /></td>
+                        <td className="px-4 py-2.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <StatusBadge status={t.status} />
+                            <DueDateBadge dueDate={t.due_date} done={t.status === "done"} />
+                          </div>
+                        </td>
                         <td className="px-4 py-2.5 text-right text-ink-muted tabular-nums whitespace-nowrap">
                           {new Date(t.created_at).toLocaleDateString("vi-VN")}
                         </td>
@@ -192,11 +206,15 @@ export default function TasksPage() {
                         {t.parent_task_id && <span className="text-ink-muted font-normal">↳ </span>}
                         {t.title}
                       </div>
-                      <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
                         <StatusBadge status={t.status} />
-                        <span className="text-[11px] text-ink-muted tabular-nums">
-                          {new Date(t.created_at).toLocaleDateString("vi-VN")}
-                        </span>
+                        {t.due_date ? (
+                          <DueDateBadge dueDate={t.due_date} done={t.status === "done"} />
+                        ) : (
+                          <span className="text-[11px] text-ink-muted tabular-nums">
+                            {new Date(t.created_at).toLocaleDateString("vi-VN")}
+                          </span>
+                        )}
                       </div>
                     </Link>
                   ))}

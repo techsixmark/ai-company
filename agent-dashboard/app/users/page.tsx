@@ -105,6 +105,16 @@ export default function UsersPage() {
 
   const isAdmin = me?.role === "admin";
 
+  if (me && !isAdmin) {
+    return (
+      <div className="max-w-md mx-auto text-center py-16">
+        <div className="text-4xl mb-3">🔒</div>
+        <h1 className="text-lg font-bold mb-1">Chỉ Admin mới xem được trang này</h1>
+        <p className="text-sm text-ink-secondary">Trang Người dùng chứa thông tin liên hệ và phân quyền của cả team, chỉ Admin được truy cập.</p>
+      </div>
+    );
+  }
+
   const stats = profiles.map((p) => {
     const userTasks = tasks.filter((t) => t.created_by === p.id);
     const userLogs = logs.filter((l) => l.created_by === p.id);

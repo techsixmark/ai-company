@@ -10,6 +10,14 @@ export function createServerClientForUser(accessToken: string) {
   });
 }
 
+// Client dùng service role key — bỏ qua RLS, chỉ dùng trong route server-side đã tự xác thực
+// (tạo user, cron job hệ thống). Không truyền ra client, không log ra ngoài.
+export function createServiceRoleClient() {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!key) throw new Error("Chưa cấu hình SUPABASE_SERVICE_ROLE_KEY");
+  return createClient(SUPABASE_URL, key, { auth: { persistSession: false } });
+}
+
 export function getBearerToken(req: Request): string | null {
   const header = req.headers.get("authorization") || req.headers.get("Authorization");
   if (!header) return null;

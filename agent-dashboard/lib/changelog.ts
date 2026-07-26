@@ -5,10 +5,25 @@ export interface ChangelogEntry {
   changes: string[];
 }
 
-export const APP_VERSION = "0.7.0";
+export const APP_VERSION = "0.8.0";
 
 // Mới nhất đứng đầu. Mỗi lần release thêm 1 entry và cập nhật APP_VERSION.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.8.0",
+    date: "2026-07-27",
+    title: "Bảo mật dữ liệu, ngân sách, deadline, giao diện 2 cột & tự động thử lại",
+    changes: [
+      "Giới hạn quyền xem: trang Người dùng chỉ Admin xem được; trang Token usage member chỉ thấy dữ liệu của mình",
+      "Đặt ngân sách token/tháng — cảnh báo khi sắp/đã vượt ngân sách",
+      "Admin sửa persona (vai trò AI, mục tiêu) từng phòng ban ngay trên trang Phòng ban",
+      "Thêm Hạn chót và Người phụ trách cho task — hiện badge quá hạn trên Kanban/Bảng/chi tiết task",
+      "Tìm kiếm task sâu hơn: khớp cả nội dung kết quả và các comment/phản hồi",
+      "Giao diện trang chi tiết task chuyển sang 2 cột (nội dung trái, trạng thái/hành động phải), dùng full chiều rộng màn hình, tối ưu mobile",
+      "Badge số lượng task cần xử lý trên sidebar (Admin: chờ duyệt; Member: cần chạy lại)",
+      "Tự động thử lại khi agent lỗi do hết quota/rate-limit Anthropic (cron chạy định kỳ)",
+    ],
+  },
   {
     version: "0.7.0",
     date: "2026-07-27",

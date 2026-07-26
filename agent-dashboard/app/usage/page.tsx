@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
-import type { Department, Profile } from "@/lib/types";
+import type { CompanySettings, Department, Profile } from "@/lib/types";
 import { DEPT_EMOJI, seriesColor } from "@/components/Badges";
+import { estimateCost, PRICE_IN, PRICE_OUT } from "@/lib/pricing";
 
 interface UsageLog {
   id: string;
@@ -16,10 +17,6 @@ interface UsageLog {
   created_at: string;
 }
 
-// Giá tham khảo Claude Sonnet (USD / 1 triệu token) — chỉ để ước lượng
-const PRICE_IN = 3;
-const PRICE_OUT = 15;
-
 function fmt(n: number) {
   return n.toLocaleString("vi-VN");
 }
@@ -28,29 +25,72 @@ export default function UsagePage() {
   const [logs, setLogs] = useState<UsageLog[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [me, setMe] = useState<Profile | null>(null);
+  const [settings, setSettings] = useState<CompanySettings | null>(null);
+  const [budgetInput, setBudgetInput] = useState("");
+  const [savingBudget, setSavingBudget] = useState(false);
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
   const [days, setDays] = useState(30);
 
-  useEffect(() => {
-    async function load() {
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData.session) {
-        setLoggedIn(false);
-        return;
-      }
-      setLoggedIn(true);
-      const since = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString();
-      const [{ data: ls }, { data: depts }, { data: pf }] = await Promise.all([
-        supabase.from("usage_logs").select("*").gte("created_at", since).order("created_at", { ascending: false }),
-        supabase.from("departments").select("*").order("color_slot"),
-        supabase.from("profiles").select("*"),
-      ]);
-      setLogs((ls as UsageLog[]) || []);
-      setDepartments((depts as Department[]) || []);
-      setProfiles((pf as Profile[]) || []);
+  const isAdmin = me?.role === "admin";
+
+  async function load() {
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData.session) {
+      setLoggedIn(false);
+      return;
     }
+    setLoggedIn(true);
+    const uid = sessionData.session.user.id;
+    const since = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString();
+    const [{ data: ls }, { data: depts }, { data: pf }, { data: cs }] = await Promise.all([
+      supabase.from("usage_logs").select("*").gte("created_at", since).order("created_at", { ascending: false }),
+      supabase.from("departments").select("*").order("color_slot"),
+      supabase.from("profiles").select("*"),
+      supabase.from("company_settings").select("*").single(),
+    ]);
+    setLogs((ls as UsageLog[]) || []);
+    setDepartments((depts as Department[]) || []);
+    const profs = (pf as Profile[]) || [];
+    setProfiles(profs);
+    setMe(profs.find((p) => p.id === uid) || null);
+    setSettings((cs as CompanySettings) || null);
+    if (cs) setBudgetInput(cs.monthly_budget_usd != null ? String(cs.monthly_budget_usd) : "");
+  }
+
+  useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [days]);
+
+  async function saveBudget() {
+    setSavingBudget(true);
+    const value = budgetInput.trim() ? Number(budgetInput) : null;
+    await supabase.from("company_settings").update({ monthly_budget_usd: value, updated_at: new Date().toISOString() }).eq("id", true);
+    await load();
+    setSavingBudget(false);
+  }
+
+  // Chi phí tháng hiện tại (từ đầu tháng đến nay) để so với ngân sách — độc lập với bộ lọc "N ngày qua"
+  const [monthCost, setMonthCost] = useState<number | null>(null);
+  useEffect(() => {
+    async function loadMonthCost() {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) return;
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+      const { data } = await supabase
+        .from("usage_logs")
+        .select("input_tokens, output_tokens")
+        .gte("created_at", startOfMonth.toISOString());
+      const rows = (data as { input_tokens: number; output_tokens: number }[]) || [];
+      const inTok = rows.reduce((s, r) => s + r.input_tokens, 0);
+      const outTok = rows.reduce((s, r) => s + r.output_tokens, 0);
+      setMonthCost(estimateCost(inTok, outTok));
+    }
+    loadMonthCost();
+  }, [logs]);
 
   if (loggedIn === false) {
     return (
@@ -63,7 +103,9 @@ export default function UsagePage() {
   const totalIn = logs.reduce((s, l) => s + l.input_tokens, 0);
   const totalOut = logs.reduce((s, l) => s + l.output_tokens, 0);
   const total = totalIn + totalOut;
-  const cost = (totalIn / 1e6) * PRICE_IN + (totalOut / 1e6) * PRICE_OUT;
+  const cost = estimateCost(totalIn, totalOut);
+  const budget = settings?.monthly_budget_usd ?? null;
+  const budgetPct = budget && budget > 0 && monthCost != null ? (monthCost / budget) * 100 : null;
 
   // Theo phòng ban
   const byDept = departments
@@ -101,7 +143,8 @@ export default function UsagePage() {
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <div className="label-micro mb-1">Quota & chi phí</div>
-          <h1 className="text-xl font-bold tracking-tight">Token đã dùng</h1>
+          <h1 className="text-xl font-bold tracking-tight">{isAdmin ? "Token đã dùng" : "Token bạn đã dùng"}</h1>
+          {!isAdmin && <p className="text-xs text-ink-muted mt-1">Chỉ hiện dữ liệu của riêng bạn — Admin xem được toàn công ty.</p>}
         </div>
         <select className="border border-black/10 rounded-full px-3 py-1.5 text-sm font-medium" value={days} onChange={(e) => setDays(Number(e.target.value))}>
           <option value={7}>7 ngày qua</option>
@@ -109,6 +152,43 @@ export default function UsagePage() {
           <option value={90}>90 ngày qua</option>
         </select>
       </div>
+
+      {isAdmin && (
+        <section className="card space-y-2">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <div className="text-xs text-ink-muted mb-0.5">Ngân sách tháng này</div>
+              {budget ? (
+                <div className="text-sm">
+                  Đã dùng <b className={budgetPct && budgetPct >= 100 ? "text-status-critical" : budgetPct && budgetPct >= 80 ? "text-status-warning" : ""}>${(monthCost ?? 0).toFixed(2)}</b> / ${budget.toFixed(2)}
+                  {budgetPct != null && ` (${budgetPct.toFixed(0)}%)`}
+                </div>
+              ) : (
+                <div className="text-sm text-ink-muted">Chưa đặt ngân sách — nhập số bên dưới để bật cảnh báo.</div>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={0}
+                step={10}
+                placeholder="VD: 200"
+                className="w-28 border border-black/10 rounded-md px-2.5 py-1.5 text-sm"
+                value={budgetInput}
+                onChange={(e) => setBudgetInput(e.target.value)}
+              />
+              <button onClick={saveBudget} disabled={savingBudget} className="btn-primary !px-3 !py-1.5 !text-xs">
+                {savingBudget ? "Đang lưu..." : "Lưu"}
+              </button>
+            </div>
+          </div>
+          {budget && budgetPct != null && budgetPct >= 80 && (
+            <p className={`text-xs font-semibold ${budgetPct >= 100 ? "text-status-critical" : "text-status-warning"}`}>
+              {budgetPct >= 100 ? "⚠️ Đã vượt ngân sách tháng này." : "⚠️ Sắp chạm ngân sách tháng này."}
+            </p>
+          )}
+        </section>
+      )}
 
       <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="stat-block bg-ink">
@@ -129,6 +209,7 @@ export default function UsagePage() {
         </div>
       </section>
 
+      {isAdmin && (
       <section>
         <div className="label-micro mb-3">Theo phòng ban</div>
         <div className="card space-y-3">
@@ -149,7 +230,9 @@ export default function UsagePage() {
           {byDept.length === 0 && <p className="text-sm text-ink-muted text-center py-6">Chưa có lượt gọi agent nào trong khoảng thời gian này.</p>}
         </div>
       </section>
+      )}
 
+      {isAdmin && (
       <section>
         <div className="label-micro mb-3">Theo người dùng</div>
         <div className="card space-y-3">
@@ -167,6 +250,7 @@ export default function UsagePage() {
           {byUser.length === 0 && <p className="text-sm text-ink-muted text-center py-6">Chưa có dữ liệu.</p>}
         </div>
       </section>
+      )}
 
       <section>
         <div className="label-micro mb-3">Theo ngày</div>

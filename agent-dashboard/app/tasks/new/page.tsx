@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
-import type { ClarifyQA, Department, Task } from "@/lib/types";
+import type { ClarifyQA, Department, Profile, Task } from "@/lib/types";
 import { DepartmentBadge, StatusBadge } from "@/components/Badges";
 
 type Step = 1 | 2 | 3;
@@ -18,6 +18,7 @@ const STEPS: { n: Step; label: string }[] = [
 export default function NewTaskPage() {
   const router = useRouter();
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
   const [recentTasks, setRecentTasks] = useState<Task[]>([]);
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
 
@@ -26,6 +27,8 @@ export default function NewTaskPage() {
   const [departmentId, setDepartmentId] = useState("ceo");
   const [description, setDescription] = useState("");
   const [inputFile, setInputFile] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [assigneeId, setAssigneeId] = useState("");
   const [questions, setQuestions] = useState<string[]>([]);
   const [answers, setAnswers] = useState<string[]>([]);
   const [outcome, setOutcome] = useState("");
@@ -37,15 +40,17 @@ export default function NewTaskPage() {
       const { data: sessionData } = await supabase.auth.getSession();
       setLoggedIn(!!sessionData.session);
       if (!sessionData.session) return;
-      const [{ data: depts }, { data: tks }] = await Promise.all([
+      const [{ data: depts }, { data: tks }, { data: pf }] = await Promise.all([
         supabase.from("departments").select("*").order("color_slot"),
         supabase.from("tasks").select("*").is("parent_task_id", null).order("created_at", { ascending: false }).limit(10),
+        supabase.from("profiles").select("*"),
       ]);
       const sorted = ((depts as Department[]) || []).sort((a, b) =>
         a.id === "ceo" ? -1 : b.id === "ceo" ? 1 : a.color_slot - b.color_slot
       );
       setDepartments(sorted);
       setRecentTasks((tks as Task[]) || []);
+      setProfiles((pf as Profile[]) || []);
     }
     load();
   }, []);
@@ -125,6 +130,8 @@ export default function NewTaskPage() {
         input_file: inputFile || null,
         expected_outcome: outcome,
         clarify_qa: qa,
+        due_date: dueDate || null,
+        assignee_id: assigneeId || null,
       });
       router.push(`/tasks/${json.task.id}`);
     } catch (err: any) {
@@ -205,6 +212,21 @@ export default function NewTaskPage() {
             <div>
               <label className="text-xs text-ink-muted">File input liên quan (tên/link, nếu có)</label>
               <input className={inputCls} value={inputFile} onChange={(e) => setInputFile(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-ink-muted">Hạn chót (tùy chọn)</label>
+                <input type="date" className={inputCls} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs text-ink-muted">Người phụ trách theo dõi (tùy chọn)</label>
+                <select className={inputCls} value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
+                  <option value="">— Chưa chọn —</option>
+                  {profiles.map((p) => (
+                    <option key={p.id} value={p.id}>{p.full_name || p.email}</option>
+                  ))}
+                </select>
+              </div>
             </div>
             {error && <p className="text-status-critical text-sm">{error}</p>}
             <button disabled={loading} className="btn-primary">
