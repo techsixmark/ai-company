@@ -1,0 +1,3 @@
+-- Đã áp dụng trực tiếp vào project Supabase "agent-dashboard-training-marketing"
+-- (project_id: ewyxaffqweoohmmttiic) qua Supabase MCP. File này lưu lại để tham khảo / tái tạo khi cần.
+-- Xem README.md để biết cách chạy lại nếu tạo project Supabase mới.

@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background: #f6f5f1;
+  color: #0b0b0b;
+}
+
+input, select, textarea {
+  background: #ffffff;
+}
+
+@layer components {
+  /* Nút CTA chính — cam marketing, phẳng, bo pill */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 bg-series-2 text-white rounded-full px-5 py-2.5 text-sm font-semibold tracking-wide transition-transform disabled:opacity-50;
+  }
+  .btn-primary:not(:disabled):hover {
+    transform: translateY(-1px);
+  }
+  .btn-good {
+    @apply inline-flex items-center justify-center bg-status-good text-white rounded-full px-5 py-2.5 text-sm font-semibold disabled:opacity-50;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center border-2 border-ink/15 rounded-full px-5 py-2 text-sm font-semibold text-ink disabled:opacity-50 hover:border-ink/40;
+  }
+  /* Thẻ phẳng */
+  .card {
+    @apply bg-white rounded-2xl border border-black/5 p-5;
+  }
+  /* Nhãn micro kiểu marketing */
+  .label-micro {
+    @apply text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted;
+  }
+  /* Khối stat màu đậm */
+  .stat-block {
+    @apply rounded-2xl p-5 text-white;
+  }
+}
