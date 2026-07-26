@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import type { Profile } from "@/lib/types";
+import { APP_VERSION } from "@/lib/changelog";
 
 function IconGrid() {
   return (
@@ -77,6 +78,15 @@ function IconUsers() {
   );
 }
 
+function IconSparkle() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" />
+      <path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15z" />
+    </svg>
+  );
+}
+
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: IconGrid },
   { href: "/tasks", label: "Task", icon: IconList },
@@ -84,6 +94,7 @@ const NAV_ITEMS = [
   { href: "/departments", label: "Phòng ban", icon: IconBuilding },
   { href: "/users", label: "Người dùng", icon: IconUsers },
   { href: "/usage", label: "Token usage", icon: IconChart },
+  { href: "/changelog", label: "Cập nhật", icon: IconSparkle },
 ];
 
 function isActive(pathname: string, href: string) {
@@ -135,6 +146,9 @@ export default function Sidebar() {
         <span className="min-w-0">
           <span className="block text-sm font-bold tracking-tight truncate">AgentHub</span>
           <span className="block text-[11px] text-ink-muted truncate">Training Marketing</span>
+        </span>
+        <span className="ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-black/5 text-ink-muted flex-none">
+          v{APP_VERSION}
         </span>
       </Link>
 

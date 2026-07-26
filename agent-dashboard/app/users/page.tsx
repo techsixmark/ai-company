@@ -25,6 +25,15 @@ export default function UsersPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Form tạo user mới (admin)
+  const [showCreate, setShowCreate] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newRole, setNewRole] = useState<"member" | "admin">("member");
+  const [creating, setCreating] = useState(false);
+  const [createMsg, setCreateMsg] = useState<string | null>(null);
+
   async function load() {
     const { data: sessionData } = await supabase.auth.getSession();
     if (!sessionData.session) {
@@ -48,6 +57,34 @@ export default function UsersPage() {
   useEffect(() => {
     load();
   }, []);
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    setCreating(true);
+    setCreateMsg(null);
+    setError(null);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ email: newEmail, password: newPassword, full_name: newName, role: newRole }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Không tạo được user");
+      setCreateMsg(`Đã tạo tài khoản ${newEmail}. Gửi email + mật khẩu tạm cho thành viên và nhắc họ đổi mật khẩu.`);
+      setNewEmail("");
+      setNewPassword("");
+      setNewName("");
+      setNewRole("member");
+      await load();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setCreating(false);
+    }
+  }
 
   async function changeRole(id: string, role: "admin" | "member") {
     setBusyId(id);
@@ -84,14 +121,53 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <div className="label-micro mb-1">Thành viên & phân quyền</div>
-        <h1 className="text-xl font-bold tracking-tight">Người dùng</h1>
-        {!isAdmin && (
-          <p className="text-xs text-ink-muted mt-1">Bạn đang xem với quyền Member — chỉ Admin mới đổi được role.</p>
+      <div className="flex items-end justify-between gap-3 flex-wrap">
+        <div>
+          <div className="label-micro mb-1">Thành viên & phân quyền</div>
+          <h1 className="text-xl font-bold tracking-tight">Người dùng</h1>
+          {!isAdmin && (
+            <p className="text-xs text-ink-muted mt-1">Bạn đang xem với quyền Member — chỉ Admin mới đổi được role.</p>
+          )}
+        </div>
+        {isAdmin && (
+          <button onClick={() => setShowCreate(!showCreate)} className="btn-primary">
+            {showCreate ? "Đóng form" : "+ Tạo user"}
+          </button>
         )}
       </div>
 
+      {isAdmin && showCreate && (
+        <form onSubmit={handleCreate} className="card space-y-3 max-w-lg">
+          <div className="text-sm font-bold">Tạo tài khoản thành viên</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-ink-muted">Email</label>
+              <input type="email" required className="w-full border border-black/10 rounded-md px-3 py-2 text-sm" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-ink-muted">Mật khẩu tạm (≥ 6 ký tự)</label>
+              <input type="text" required minLength={6} className="w-full border border-black/10 rounded-md px-3 py-2 text-sm" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-ink-muted">Họ tên</label>
+              <input className="w-full border border-black/10 rounded-md px-3 py-2 text-sm" value={newName} onChange={(e) => setNewName(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-ink-muted">Role</label>
+              <select className="w-full border border-black/10 rounded-md px-3 py-2 text-sm" value={newRole} onChange={(e) => setNewRole(e.target.value as "member" | "admin")}>
+                <option value="member">Member</option>
+                <option value="admin">Admin ★</option>
+              </select>
+            </div>
+          </div>
+          <p className="text-xs text-ink-muted">
+            Tài khoản được kích hoạt ngay (không cần xác nhận email). Gửi mật khẩu tạm cho thành viên và nhắc họ tự đổi.
+          </p>
+          <button disabled={creating} className="btn-good">{creating ? "Đang tạo..." : "Tạo tài khoản"}</button>
+        </form>
+      )}
+
+      {createMsg && <p className="text-status-good text-sm">{createMsg}</p>}
       {error && <p className="text-status-critical text-sm">{error}</p>}
 
       <div className="card !p-0 overflow-x-auto">
