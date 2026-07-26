@@ -42,6 +42,7 @@ export interface TaskApprovedFile {
   file_name: string;
   file_size: number | null;
   note: string | null;
+  tags: string[];
   uploaded_by: string;
   created_at: string;
 }

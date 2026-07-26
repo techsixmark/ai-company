@@ -45,6 +45,11 @@ export default function TaskDetailPage() {
   const [feedbackFile, setFeedbackFile] = useState<File | null>(null);
   const [approvedFiles, setApprovedFiles] = useState<TaskApprovedFile[]>([]);
   const [uploadingApproved, setUploadingApproved] = useState(false);
+  const [showApprovedForm, setShowApprovedForm] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingTags, setPendingTags] = useState("");
+  const [editingTagsId, setEditingTagsId] = useState<string | null>(null);
+  const [editTagsValue, setEditTagsValue] = useState("");
 
   async function load() {
     const { data: sessionData } = await supabase.auth.getSession();
@@ -190,22 +195,28 @@ export default function TaskDetailPage() {
     }
   }
 
-  // Lưu file deliverable cuối cùng đã duyệt cho task này (có thể nhiều file / nhiều lần)
-  async function uploadApprovedFile(file: File) {
+  // Lưu file deliverable cuối cùng đã duyệt cho task này (có thể nhiều file / nhiều lần), kèm tag tự đặt
+  async function uploadApprovedFile() {
+    if (!pendingFile) return;
     setUploadingApproved(true);
     setError(null);
     try {
-      const uploaded = await uploadTaskFile(id, "approved", file);
+      const uploaded = await uploadTaskFile(id, "approved", pendingFile);
       const { data: sessionData } = await supabase.auth.getSession();
       const uid = sessionData.session?.user.id;
+      const tags = pendingTags.split(",").map((t) => t.trim()).filter(Boolean);
       const { error: insertError } = await supabase.from("task_approved_files").insert({
         task_id: id,
         file_url: uploaded.url,
         file_name: uploaded.name,
         file_size: uploaded.size,
+        tags,
         uploaded_by: uid,
       });
       if (insertError) throw insertError;
+      setPendingFile(null);
+      setPendingTags("");
+      setShowApprovedForm(false);
       await load();
     } catch (err: any) {
       setError(err.message);
@@ -221,6 +232,22 @@ export default function TaskDetailPage() {
       setError(delError.message);
       return;
     }
+    await load();
+  }
+
+  function startEditTags(f: TaskApprovedFile) {
+    setEditingTagsId(f.id);
+    setEditTagsValue(f.tags.join(", "));
+  }
+
+  async function saveTags(fileId: string) {
+    const tags = editTagsValue.split(",").map((t) => t.trim()).filter(Boolean);
+    const { error: updateError } = await supabase.from("task_approved_files").update({ tags }).eq("id", fileId);
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+    setEditingTagsId(null);
     await load();
   }
 
@@ -268,6 +295,26 @@ export default function TaskDetailPage() {
   const isAdmin = profile?.role === "admin";
   const canEditMeta = isAdmin || task.created_by === myId;
   const pendingSubtasks = subtasks.filter((s) => s.status === "pending" || s.status === "revise").length;
+
+  // Ghép mỗi comment (feedback) với kết quả agent chạy ra / sửa tay ngay sau đó, để xem lại "chỉnh sửa gì → ra kết quả gì"
+  const historyAsc = [...history].sort((a, b) => a.created_at.localeCompare(b.created_at));
+  function resultAfterFeedback(fb: TaskHistoryEntry): TaskHistoryEntry | null {
+    const idx = historyAsc.findIndex((h) => h.id === fb.id);
+    for (let i = idx + 1; i < historyAsc.length; i++) {
+      const h = historyAsc[i];
+      if (h.type === "feedback") return null;
+      if (h.type === "agent_run" || h.type === "result_edit") return h;
+    }
+    return null;
+  }
+  const pairedResultIds = new Set(
+    history
+      .filter((h) => h.type === "feedback")
+      .map((h) => resultAfterFeedback(h))
+      .filter((h): h is TaskHistoryEntry => !!h)
+      .map((h) => h.id)
+  );
+  const commentTimeline = history.filter((h) => !pairedResultIds.has(h.id));
 
   return (
     <div className="space-y-4">
@@ -419,31 +466,6 @@ export default function TaskDetailPage() {
             </div>
           )}
 
-          {history.length > 0 && (
-            <details className="card !py-3">
-              <summary className="text-xs text-ink-muted cursor-pointer select-none">
-                Lịch sử phản hồi & chỉnh sửa ({history.length})
-              </summary>
-              <div className="mt-3 space-y-3">
-                {history.map((h) => (
-                  <div key={h.id} className="border-l-2 border-black/10 pl-3">
-                    <div className="flex items-center gap-2 text-xs text-ink-muted mb-1 flex-wrap">
-                      <span className="font-semibold text-ink">{HISTORY_LABEL[h.type] || h.type}</span>
-                      <span>· {userName(h.created_by)}</span>
-                      <span>· {new Date(h.created_at).toLocaleString("vi-VN")}</span>
-                    </div>
-                    <p className="text-sm whitespace-pre-wrap line-clamp-6">{h.content}</p>
-                    {h.file_url && (
-                      <a href={h.file_url} target="_blank" rel="noopener noreferrer" className="text-xs text-series-1 hover:underline">
-                        📎 {h.file_name || "File đính kèm"}
-                      </a>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </details>
-          )}
-
           {error && <p className="text-status-critical text-sm">{error}</p>}
         </div>
 
@@ -535,30 +557,80 @@ export default function TaskDetailPage() {
             <p className="text-xs text-ink-muted">Đang chờ Admin duyệt.</p>
           )}
 
+          {commentTimeline.length > 0 && (
+            <div className="card space-y-3">
+              <div className="text-xs text-ink-muted">💬 Bình luận & chỉnh sửa ({commentTimeline.length})</div>
+              <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+                {commentTimeline.map((h) => {
+                  const result = h.type === "feedback" ? resultAfterFeedback(h) : null;
+                  return (
+                    <div key={h.id} className="border-l-2 border-black/10 pl-2.5">
+                      <div className="flex items-center gap-1.5 text-[11px] text-ink-muted mb-1 flex-wrap">
+                        <span className="font-semibold text-ink">{HISTORY_LABEL[h.type] || h.type}</span>
+                        <span>· {userName(h.created_by)}</span>
+                        <span>· {new Date(h.created_at).toLocaleString("vi-VN")}</span>
+                      </div>
+                      <p className="text-sm whitespace-pre-wrap">{h.content}</p>
+                      {h.file_url && (
+                        <a href={h.file_url} target="_blank" rel="noopener noreferrer" className="text-xs text-series-1 hover:underline block mt-1">
+                          📎 {h.file_name || "File đính kèm"}
+                        </a>
+                      )}
+                      {h.type === "feedback" && (
+                        <div className="mt-2 pl-2 border-l-2 border-status-good/40">
+                          {result ? (
+                            <>
+                              <div className="text-[11px] text-status-good font-semibold mb-0.5">
+                                → Kết quả sau chỉnh sửa · {new Date(result.created_at).toLocaleString("vi-VN")}
+                              </div>
+                              <p className="text-xs text-ink-secondary whitespace-pre-wrap line-clamp-6">{result.content}</p>
+                            </>
+                          ) : (
+                            <div className="text-[11px] text-ink-muted italic">Đang chờ chạy lại...</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {(isAdmin || approvedFiles.length > 0) && (
             <div className="card space-y-3">
               <div className="flex items-center justify-between">
                 <div className="text-xs text-ink-muted">📁 File đã duyệt ({approvedFiles.length})</div>
                 {isAdmin && (
-                  <label className="text-xs font-semibold text-series-1 hover:underline cursor-pointer">
-                    {uploadingApproved ? "Đang tải..." : "+ Thêm"}
-                    <input
-                      type="file"
-                      className="hidden"
-                      disabled={uploadingApproved}
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) uploadApprovedFile(f);
-                        e.target.value = "";
-                      }}
-                    />
-                  </label>
+                  <button onClick={() => setShowApprovedForm(!showApprovedForm)} className="text-xs font-semibold text-series-1 hover:underline">
+                    {showApprovedForm ? "Đóng" : "+ Thêm"}
+                  </button>
                 )}
               </div>
+
+              {showApprovedForm && (
+                <div className="space-y-2 border border-black/10 rounded-lg p-2.5">
+                  <input
+                    type="file"
+                    className="text-xs w-full"
+                    onChange={(e) => setPendingFile(e.target.files?.[0] || null)}
+                  />
+                  <input
+                    className="w-full border border-black/10 rounded-md px-2 py-1 text-xs"
+                    placeholder="Tag, phân cách bởi dấu phẩy (VD: hợp đồng, quý-4)"
+                    value={pendingTags}
+                    onChange={(e) => setPendingTags(e.target.value)}
+                  />
+                  <button onClick={uploadApprovedFile} disabled={!pendingFile || uploadingApproved} className="btn-good w-full !py-1.5 !text-xs">
+                    {uploadingApproved ? "Đang tải lên..." : "Tải lên"}
+                  </button>
+                </div>
+              )}
+
               {approvedFiles.length > 0 ? (
                 <div className="divide-y divide-black/5">
                   {approvedFiles.map((f) => (
-                    <div key={f.id} className="py-2 text-sm space-y-0.5">
+                    <div key={f.id} className="py-2 text-sm space-y-1">
                       <a href={f.file_url} target="_blank" rel="noopener noreferrer" className="font-medium text-series-1 hover:underline block truncate">
                         📄 {f.file_name}
                       </a>
@@ -568,6 +640,31 @@ export default function TaskDetailPage() {
                           <button onClick={() => deleteApprovedFile(f.id)} className="text-status-critical hover:underline">Xóa</button>
                         )}
                       </span>
+                      {editingTagsId === f.id ? (
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            className="border border-black/10 rounded px-1.5 py-0.5 text-[11px] flex-1"
+                            placeholder="tag1, tag2"
+                            value={editTagsValue}
+                            onChange={(e) => setEditTagsValue(e.target.value)}
+                          />
+                          <button onClick={() => saveTags(f.id)} className="text-[11px] text-status-good font-semibold">Lưu</button>
+                          <button onClick={() => setEditingTagsId(null)} className="text-[11px] text-ink-muted">Hủy</button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {f.tags.map((t) => (
+                            <Link key={t} href={`/documents?tag=${encodeURIComponent(t)}`} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-series-1/10 text-series-1 hover:bg-series-1/20">
+                              #{t}
+                            </Link>
+                          ))}
+                          {isAdmin && (
+                            <button onClick={() => startEditTags(f)} className="text-[10px] text-ink-muted hover:underline">
+                              {f.tags.length ? "sửa tag" : "+ tag"}
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

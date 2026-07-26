@@ -78,6 +78,14 @@ function IconUsers() {
   );
 }
 
+function IconFolder() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 7a1.5 1.5 0 0 1 1.5-1.5H9l2 2h8.5A1.5 1.5 0 0 1 21 9v8.5A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5V7z" />
+    </svg>
+  );
+}
+
 function IconSparkle() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -92,6 +100,7 @@ const NAV_ITEMS = [
   { href: "/tasks", label: "Task", icon: IconList },
   { href: "/tasks/new", label: "Giao việc", icon: IconPlus },
   { href: "/departments", label: "Phòng ban", icon: IconBuilding },
+  { href: "/documents", label: "Tài liệu", icon: IconFolder },
   { href: "/users", label: "Người dùng", icon: IconUsers },
   { href: "/usage", label: "Token usage", icon: IconChart },
   { href: "/changelog", label: "Cập nhật", icon: IconSparkle },
