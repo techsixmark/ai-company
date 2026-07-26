@@ -22,6 +22,17 @@ export interface ClarifyQA {
   answer: string;
 }
 
+export type TaskHistoryType = "feedback" | "result_edit" | "agent_run";
+
+export interface TaskHistoryEntry {
+  id: string;
+  task_id: string;
+  type: TaskHistoryType;
+  content: string;
+  created_by: string;
+  created_at: string;
+}
+
 export interface Task {
   id: string;
   title: string;

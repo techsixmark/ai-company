@@ -54,6 +54,10 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     });
   }
 
+  async function logHistory(content: string) {
+    await supabase.from("task_history").insert({ task_id: params.id, type: "agent_run", content, created_by: userId });
+  }
+
   try {
     // ---- Nhánh CEO: phân rã mục tiêu thành task con và giao cho các phòng ban ----
     if (task.department_id === "ceo") {
@@ -108,6 +112,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         .select()
         .single();
       if (updateError) throw new Error(updateError.message);
+      await logHistory(updated.result_text);
       return NextResponse.json({ task: updated, subtasksCreated: subtasks.length });
     }
 
@@ -129,6 +134,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       .select()
       .single();
     if (updateError) throw new Error(updateError.message);
+    await logHistory(resultText);
     return NextResponse.json({ task: updated });
   } catch (err: any) {
     await supabase.from("tasks").update({ status: task.feedback ? "revise" : "pending" }).eq("id", params.id);

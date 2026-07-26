@@ -5,10 +5,21 @@ export interface ChangelogEntry {
   changes: string[];
 }
 
-export const APP_VERSION = "0.5.0";
+export const APP_VERSION = "0.6.0";
 
 // Mới nhất đứng đầu. Mỗi lần release thêm 1 entry và cập nhật APP_VERSION.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.6.0",
+    date: "2026-07-27",
+    title: "Xuất file đầy đủ & lịch sử chỉnh sửa",
+    changes: [
+      "Xuất kết quả task ra Word (.docx) và PDF (in trực tiếp), ngoài Markdown",
+      "Nội dung xuất file gộp đầy đủ: outcome, hỏi-đáp, phản hồi và (task CEO) kết quả thật của từng phòng ban — không chỉ bản kế hoạch",
+      "Admin sửa tay được kết quả agent trả về",
+      "Lưu lịch sử phản hồi, sửa tay và mỗi lần agent chạy lại cho từng task — xem lại trong mục 'Lịch sử phản hồi & chỉnh sửa'",
+    ],
+  },
   {
     version: "0.5.0",
     date: "2026-07-27",

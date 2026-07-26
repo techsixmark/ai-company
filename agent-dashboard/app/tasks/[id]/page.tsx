@@ -4,8 +4,15 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
-import type { Department, Profile, Task } from "@/lib/types";
+import type { Department, Profile, Task, TaskHistoryEntry } from "@/lib/types";
 import { DepartmentBadge, StatusBadge } from "@/components/Badges";
+import { buildAndDownloadDocx, buildExportData, buildMarkdown, downloadTextFile, exportFileBaseName } from "@/lib/export";
+
+const HISTORY_LABEL: Record<string, string> = {
+  feedback: "💬 Phản hồi",
+  result_edit: "✎ Sửa tay kết quả",
+  agent_run: "🤖 Agent chạy xong",
+};
 
 export default function TaskDetailPage() {
   const params = useParams();
@@ -14,12 +21,19 @@ export default function TaskDetailPage() {
   const [task, setTask] = useState<Task | null>(null);
   const [subtasks, setSubtasks] = useState<Task[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [runningAll, setRunningAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [history, setHistory] = useState<TaskHistoryEntry[]>([]);
+  const [editingResult, setEditingResult] = useState(false);
+  const [editResultText, setEditResultText] = useState("");
+  const [savingResult, setSavingResult] = useState(false);
 
   async function load() {
     const { data: sessionData } = await supabase.auth.getSession();
@@ -29,16 +43,20 @@ export default function TaskDetailPage() {
     }
     setLoggedIn(true);
     const user = sessionData.session.user;
-    const [{ data: t }, { data: p }, { data: depts }, { data: children }] = await Promise.all([
+    const [{ data: t }, { data: p }, { data: depts }, { data: children }, { data: allProfiles }, { data: hist }] = await Promise.all([
       supabase.from("tasks").select("*").eq("id", id).single(),
       supabase.from("profiles").select("*").eq("id", user.id).single(),
       supabase.from("departments").select("*"),
       supabase.from("tasks").select("*").eq("parent_task_id", id).order("created_at"),
+      supabase.from("profiles").select("*"),
+      supabase.from("task_history").select("*").eq("task_id", id).order("created_at", { ascending: false }),
     ]);
     setTask(t as Task);
     setProfile(p as Profile);
     setDepartments((depts as Department[]) || []);
     setSubtasks((children as Task[]) || []);
+    setProfiles((allProfiles as Profile[]) || []);
+    setHistory((hist as TaskHistoryEntry[]) || []);
   }
 
   useEffect(() => {
@@ -110,33 +128,55 @@ export default function TaskDetailPage() {
     }
   }
 
-  // Xuất kết quả task ra file Markdown tải về máy
-  function downloadResult() {
-    if (!task) return;
-    const d = dept(task.department_id);
-    const lines = [
-      `# ${task.title}`,
-      ``,
-      `- Phòng ban: ${d ? d.name : task.department_id}`,
-      `- Trạng thái: ${task.status === "done" ? "Đã duyệt" : task.status}`,
-      `- Ngày tạo: ${new Date(task.created_at).toLocaleString("vi-VN")}`,
-      ``,
-      `## Yêu cầu`,
-      task.description,
-    ];
-    if (task.expected_outcome) lines.push(``, `## Outcome đã xác nhận`, task.expected_outcome);
-    if (Array.isArray(task.clarify_qa) && task.clarify_qa.length) {
-      lines.push(``, `## Hỏi-đáp làm rõ`);
-      task.clarify_qa.forEach((x, i) => lines.push(`${i + 1}. **${x.question}** ${x.answer?.trim() || "(bỏ qua)"}`));
+  function startEditResult() {
+    setEditResultText(task?.result_text || "");
+    setEditingResult(true);
+  }
+
+  async function saveEditedResult() {
+    setSavingResult(true);
+    setError(null);
+    try {
+      const res = await authedFetch(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ result_text: editResultText }) });
+      if (!res.ok) throw new Error((await res.json()).error);
+      setEditingResult(false);
+      await load();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSavingResult(false);
     }
-    lines.push(``, `## Kết quả`, task.result_text || "(chưa có)");
-    const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${task.title.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "").toLowerCase() || "task"}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
+  }
+
+  function userName(uid: string) {
+    const p = profiles.find((x) => x.id === uid);
+    return p?.full_name || p?.email || "?";
+  }
+
+  // Xuất kết quả task — gộp đầy đủ: mô tả, outcome, hỏi-đáp, phản hồi, và (với task CEO) kết quả thật của từng phòng ban
+  const exportData = task ? buildExportData(task, subtasks, departments, profiles) : null;
+
+  function exportMd() {
+    if (!exportData || !task) return;
+    downloadTextFile(buildMarkdown(exportData), `${exportFileBaseName(task.title)}.md`, "text/markdown");
+    setExportOpen(false);
+  }
+
+  async function exportDocx() {
+    if (!exportData || !task) return;
+    setExporting(true);
+    try {
+      await buildAndDownloadDocx(exportData, `${exportFileBaseName(task.title)}.docx`);
+    } finally {
+      setExporting(false);
+      setExportOpen(false);
+    }
+  }
+
+  function exportPdf() {
+    setExportOpen(false);
+    // Trình duyệt render #print-area rồi mở hộp thoại in — chọn "Lưu thành PDF" ở đích in.
+    setTimeout(() => window.print(), 50);
   }
 
   if (loggedIn === false) {
@@ -211,13 +251,52 @@ export default function TaskDetailPage() {
 
       {task.result_text && (
         <div className="card space-y-2">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center justify-between gap-2 relative">
             <div className="text-xs text-ink-muted">{isCeoTask ? "Kế hoạch phân việc của CEO" : "Kết quả từ agent"}</div>
-            <button onClick={downloadResult} className="text-xs font-semibold text-series-1 hover:underline flex items-center gap-1">
-              ⬇ Tải file (.md)
-            </button>
+            <div className="flex items-center gap-3">
+              {isAdmin && !editingResult && (
+                <button onClick={startEditResult} className="text-xs font-semibold text-ink-secondary hover:underline">
+                  ✎ Sửa tay
+                </button>
+              )}
+              <div>
+                <button
+                  onClick={() => setExportOpen(!exportOpen)}
+                  disabled={exporting}
+                  className="text-xs font-semibold text-series-1 hover:underline flex items-center gap-1 disabled:opacity-50"
+                >
+                  {exporting ? "Đang tạo file..." : "⬇ Xuất file"} {!exporting && "▾"}
+                </button>
+                {exportOpen && (
+                  <div className="absolute right-0 top-6 z-10 bg-white border border-black/10 rounded-lg shadow-lg py-1 w-44 text-sm">
+                    <button onClick={exportMd} className="w-full text-left px-3 py-1.5 hover:bg-black/5">Markdown (.md)</button>
+                    <button onClick={exportDocx} className="w-full text-left px-3 py-1.5 hover:bg-black/5">Word (.docx)</button>
+                    <button onClick={exportPdf} className="w-full text-left px-3 py-1.5 hover:bg-black/5">In / Lưu PDF</button>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
-          <p className="text-sm whitespace-pre-wrap">{task.result_text}</p>
+          {editingResult ? (
+            <div className="space-y-2">
+              <textarea
+                rows={10}
+                className="w-full border border-black/10 rounded-md px-3 py-2 text-sm"
+                value={editResultText}
+                onChange={(e) => setEditResultText(e.target.value)}
+              />
+              <div className="flex gap-2">
+                <button onClick={saveEditedResult} disabled={savingResult} className="btn-good !px-4 !py-1.5 !text-xs">
+                  {savingResult ? "Đang lưu..." : "Lưu chỉnh sửa"}
+                </button>
+                <button onClick={() => setEditingResult(false)} disabled={savingResult} className="btn-ghost !px-4 !py-1.5 !text-xs">
+                  Hủy
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm whitespace-pre-wrap">{task.result_text}</p>
+          )}
         </div>
       )}
 
@@ -274,7 +353,89 @@ export default function TaskDetailPage() {
         <p className="text-xs text-ink-muted">Đang chờ Admin duyệt.</p>
       )}
 
+      {history.length > 0 && (
+        <details className="card !py-3">
+          <summary className="text-xs text-ink-muted cursor-pointer select-none">
+            Lịch sử phản hồi & chỉnh sửa ({history.length})
+          </summary>
+          <div className="mt-3 space-y-3">
+            {history.map((h) => (
+              <div key={h.id} className="border-l-2 border-black/10 pl-3">
+                <div className="flex items-center gap-2 text-xs text-ink-muted mb-1">
+                  <span className="font-semibold text-ink">{HISTORY_LABEL[h.type] || h.type}</span>
+                  <span>· {userName(h.created_by)}</span>
+                  <span>· {new Date(h.created_at).toLocaleString("vi-VN")}</span>
+                </div>
+                <p className="text-sm whitespace-pre-wrap line-clamp-6">{h.content}</p>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
       {error && <p className="text-status-critical text-sm">{error}</p>}
+
+      {/* Chỉ hiện khi in (window.print) — CSS trong globals.css ẩn phần còn lại của trang */}
+      {exportData && (
+        <div id="print-area">
+          <h1>{exportData.title}</h1>
+          <p>
+            <b>Phòng ban:</b> {exportData.departmentLabel}
+            <br />
+            <b>Trạng thái:</b> {exportData.statusLabel}
+            <br />
+            <b>Người giao:</b> {exportData.createdByName}
+            <br />
+            <b>Ngày tạo:</b> {exportData.createdAt}
+          </p>
+
+          <h2>Yêu cầu</h2>
+          <p style={{ whiteSpace: "pre-wrap" }}>{exportData.description}</p>
+
+          {exportData.expectedOutcome && (
+            <>
+              <h2>Outcome đã xác nhận</h2>
+              <p style={{ whiteSpace: "pre-wrap" }}>{exportData.expectedOutcome}</p>
+            </>
+          )}
+
+          {exportData.clarifyQa.length > 0 && (
+            <>
+              <h2>Hỏi-đáp làm rõ</h2>
+              <ol>
+                {exportData.clarifyQa.map((x, i) => (
+                  <li key={i}>
+                    <b>{x.question}</b> — {x.answer?.trim() || "(bỏ qua)"}
+                  </li>
+                ))}
+              </ol>
+            </>
+          )}
+
+          {exportData.feedback && (
+            <>
+              <h2>Phản hồi / yêu cầu chỉnh sửa gần nhất</h2>
+              <p style={{ whiteSpace: "pre-wrap" }}>{exportData.feedback}</p>
+            </>
+          )}
+
+          <h2>{exportData.isCeo ? "Kế hoạch phân việc của CEO" : "Kết quả"}</h2>
+          <p style={{ whiteSpace: "pre-wrap" }}>{exportData.resultText || "(chưa có)"}</p>
+
+          {exportData.isCeo && exportData.subtasks.length > 0 && (
+            <>
+              <h2>Kết quả chi tiết từng phòng ban ({exportData.subtasks.length})</h2>
+              {exportData.subtasks.map((s, i) => (
+                <div key={i}>
+                  <h3>{i + 1}. [{s.departmentLabel}] {s.title}</h3>
+                  <p><i>Trạng thái: {s.status}</i></p>
+                  <p style={{ whiteSpace: "pre-wrap" }}>{s.resultText || "(chưa có kết quả)"}</p>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

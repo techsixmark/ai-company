@@ -38,3 +38,22 @@ input, select, textarea {
     @apply rounded-2xl p-5 text-white;
   }
 }
+
+/* In / Lưu PDF: chỉ hiện #print-area, ẩn toàn bộ phần còn lại của app */
+#print-area {
+  display: none;
+}
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #print-area, #print-area * {
+    visibility: visible;
+  }
+  #print-area {
+    display: block;
+    position: absolute;
+    inset: 0;
+    padding: 24px;
+  }
+}
