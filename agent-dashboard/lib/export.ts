@@ -172,3 +172,67 @@ export async function buildAndDownloadDocx(data: ExportData, filename: string) {
   a.click();
   URL.revokeObjectURL(url);
 }
+
+function stripMd(s: string): string {
+  return s
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/\*(.*?)\*/g, "$1")
+    .replace(/`(.*?)`/g, "$1")
+    .trim();
+}
+
+interface Slide {
+  title: string;
+  bullets: string[];
+}
+
+// Chuyển nội dung markdown (do agent trả về) thành danh sách slide: heading (#/##/###) mở slide mới,
+// gạch đầu dòng / đoạn văn ngắn thành bullet. Dùng cho xuất PowerPoint — agent không tự sinh file .pptx được,
+// chỉ sinh text, nên phải parse lại theo cấu trúc.
+function parseMarkdownToSlides(md: string): Slide[] {
+  const slides: Slide[] = [];
+  let current: Slide | null = null;
+  for (const raw of md.split("\n")) {
+    const line = raw.trim();
+    if (!line || /^-{3,}$/.test(line)) continue;
+    const heading = line.match(/^#{1,3}\s+(.*)/);
+    if (heading) {
+      if (current && (current.title || current.bullets.length)) slides.push(current);
+      current = { title: stripMd(heading[1]), bullets: [] };
+      continue;
+    }
+    if (!current) current = { title: "Tổng quan", bullets: [] };
+    const bullet = line.match(/^[-*]\s+(.*)/) || line.match(/^\d+[.)]\s+(.*)/);
+    const text = stripMd(bullet ? bullet[1] : line);
+    if (text) current.bullets.push(text);
+  }
+  if (current && (current.title || current.bullets.length)) slides.push(current);
+  return slides;
+}
+
+export async function buildAndDownloadPptx(data: ExportData, filename: string) {
+  const PptxGenJS = (await import("pptxgenjs")).default;
+  const pptx = new PptxGenJS();
+
+  const cover = pptx.addSlide();
+  cover.addText(data.title, { x: 0.5, y: 2, w: 9, h: 1.5, fontSize: 30, bold: true, align: "center", valign: "middle" });
+  cover.addText(`${data.departmentLabel} · ${data.createdAt}`, { x: 0.5, y: 3.4, w: 9, h: 0.5, fontSize: 14, align: "center", color: "666666" });
+
+  const content = data.isCeo && data.subtasks.length
+    ? data.subtasks.map((s) => `## ${s.title}\n${s.resultText || ""}`).join("\n\n")
+    : data.resultText || "";
+
+  const slides = parseMarkdownToSlides(content).slice(0, 40); // giới hạn 40 slide tránh file quá nặng
+  slides.forEach((s) => {
+    const slide = pptx.addSlide();
+    slide.addText(s.title, { x: 0.4, y: 0.3, w: 9.2, h: 0.8, fontSize: 22, bold: true, color: "1A1A1A" });
+    if (s.bullets.length) {
+      slide.addText(
+        s.bullets.map((b) => ({ text: b, options: { bullet: true, breakLine: true } })),
+        { x: 0.5, y: 1.25, w: 9, h: 5.2, fontSize: 15, color: "333333", valign: "top" }
+      );
+    }
+  });
+
+  await pptx.writeFile({ fileName: filename });
+}

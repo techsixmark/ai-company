@@ -6,7 +6,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import type { Department, Profile, Task, TaskApprovedFile, TaskHistoryEntry } from "@/lib/types";
 import { DepartmentBadge, StatusBadge, DueDateBadge } from "@/components/Badges";
-import { buildAndDownloadDocx, buildExportData, buildMarkdown, downloadTextFile, exportFileBaseName } from "@/lib/export";
+import { buildAndDownloadDocx, buildAndDownloadPptx, buildExportData, buildMarkdown, downloadTextFile, exportFileBaseName } from "@/lib/export";
 import { uploadTaskFile } from "@/lib/upload";
 
 const HISTORY_LABEL: Record<string, string> = {
@@ -287,6 +287,17 @@ export default function TaskDetailPage() {
     setTimeout(() => window.print(), 50);
   }
 
+  async function exportPptx() {
+    if (!exportData || !task) return;
+    setExporting(true);
+    try {
+      await buildAndDownloadPptx(exportData, `${exportFileBaseName(task.title)}.pptx`);
+    } finally {
+      setExporting(false);
+      setExportOpen(false);
+    }
+  }
+
   if (loggedIn === false) {
     return <p className="text-sm text-ink-secondary">Vui lòng <Link href="/login" className="text-series-2 font-semibold">đăng nhập</Link>.</p>;
   }
@@ -408,6 +419,7 @@ export default function TaskDetailPage() {
                       <div className="absolute right-0 top-6 z-10 bg-white border border-black/10 rounded-lg shadow-lg py-1 w-44 text-sm">
                         <button onClick={exportMd} className="w-full text-left px-3 py-1.5 hover:bg-black/5">Markdown (.md)</button>
                         <button onClick={exportDocx} className="w-full text-left px-3 py-1.5 hover:bg-black/5">Word (.docx)</button>
+                        <button onClick={exportPptx} className="w-full text-left px-3 py-1.5 hover:bg-black/5">PowerPoint (.pptx)</button>
                         <button onClick={exportPdf} className="w-full text-left px-3 py-1.5 hover:bg-black/5">In / Lưu PDF</button>
                       </div>
                     )}

@@ -5,10 +5,19 @@ export interface ChangelogEntry {
   changes: string[];
 }
 
-export const APP_VERSION = "0.9.0";
+export const APP_VERSION = "0.10.0";
 
 // Mới nhất đứng đầu. Mỗi lần release thêm 1 entry và cập nhật APP_VERSION.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.10.0",
+    date: "2026-07-27",
+    title: "Xuất file PowerPoint thật",
+    changes: [
+      "Thêm 'PowerPoint (.pptx)' vào menu Xuất file — tự chuyển kết quả agent thành slide thật, tải về mở được ngay",
+      "Khi yêu cầu/phản hồi nhắc đến powerpoint/slide/trình chiếu, agent tự trình bày theo cấu trúc từng slide để chuyển đổi chính xác hơn",
+    ],
+  },
   {
     version: "0.9.0",
     date: "2026-07-27",

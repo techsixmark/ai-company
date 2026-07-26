@@ -13,6 +13,14 @@ export function isRetryableAnthropicError(message: string): boolean {
   );
 }
 
+const SLIDE_KEYWORDS = ["powerpoint", "pptx", "slide", "trình chiếu", "thuyết trình", "bài giảng dạng slide"];
+
+// Phát hiện yêu cầu muốn định dạng slide/PowerPoint, để nhắc agent trình bày theo cấu trúc dễ chuyển thành .pptx thật
+function wantsSlideFormat(task: any): boolean {
+  const text = `${task.title} ${task.description} ${task.expected_outcome || ""} ${task.feedback || ""}`.toLowerCase();
+  return SLIDE_KEYWORDS.some((k) => text.includes(k));
+}
+
 class RunError extends Error {
   retryable: boolean;
   constructor(message: string, retryable: boolean) {
@@ -126,7 +134,11 @@ export async function runTaskAgent(supabase: any, task: any, userId: string) {
       return { task: updated, subtasksCreated: subtasks.length };
     }
 
-    const system = `Bạn là ${department?.agent_role || "chuyên gia"} của phòng "${department?.name}" (${department?.name_vi}) tại một công ty training nhân sự marketing. Mục tiêu của phòng: ${department?.goal}. Hãy thực hiện đúng yêu cầu của task được giao, trả về nội dung rõ ràng, có cấu trúc, sẵn sàng để người quản lý duyệt.`;
+    const wantsSlides = wantsSlideFormat(task);
+    const slideInstruction = wantsSlides
+      ? ` Yêu cầu này cần trình bày dạng SLIDE/PowerPoint — hệ thống sẽ tự động chuyển văn bản của bạn thành file .pptx thật, vì vậy bắt buộc trình bày đúng cấu trúc: mỗi slide bắt đầu bằng dòng riêng "## Slide <số>: <tiêu đề ngắn>", theo sau là các gạch đầu dòng ("- ...") thật ngắn gọn (mỗi dòng tối đa ~12 từ, không viết đoạn văn dài). Không thêm chữ nào ngoài cấu trúc slide này.`
+      : "";
+    const system = `Bạn là ${department?.agent_role || "chuyên gia"} của phòng "${department?.name}" (${department?.name_vi}) tại một công ty training nhân sự marketing. Mục tiêu của phòng: ${department?.goal}. Hãy thực hiện đúng yêu cầu của task được giao, trả về nội dung rõ ràng, có cấu trúc, sẵn sàng để người quản lý duyệt.${slideInstruction}`;
 
     let user = `Task: ${task.title}\n\nMô tả / kỳ vọng đầu ra:\n${task.description}`;
     user += taskContext(task);
