@@ -5,10 +5,19 @@ export interface ChangelogEntry {
   changes: string[];
 }
 
-export const APP_VERSION = "0.6.0";
+export const APP_VERSION = "0.7.0";
 
 // Mới nhất đứng đầu. Mỗi lần release thêm 1 entry và cập nhật APP_VERSION.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.7.0",
+    date: "2026-07-27",
+    title: "Comment kèm file & kho lưu file đã duyệt",
+    changes: [
+      "Khi yêu cầu chỉnh sửa, chủ doanh nghiệp đính kèm được 1 file tham khảo — tự lưu vào lịch sử task",
+      "Thêm mục 'File deliverable đã duyệt' cho từng task — Admin tải lên và lưu trữ file kết quả cuối cùng, xem/tải lại bất cứ lúc nào",
+    ],
+  },
   {
     version: "0.6.0",
     date: "2026-07-27",

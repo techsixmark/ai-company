@@ -29,7 +29,20 @@ export interface TaskHistoryEntry {
   task_id: string;
   type: TaskHistoryType;
   content: string;
+  file_url: string | null;
+  file_name: string | null;
   created_by: string;
+  created_at: string;
+}
+
+export interface TaskApprovedFile {
+  id: string;
+  task_id: string;
+  file_url: string;
+  file_name: string;
+  file_size: number | null;
+  note: string | null;
+  uploaded_by: string;
   created_at: string;
 }
 

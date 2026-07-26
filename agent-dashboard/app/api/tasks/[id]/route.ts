@@ -33,7 +33,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   // Ghi lịch sử: phản hồi (feedback) và chỉnh sửa tay kết quả — mỗi cái là 1 mốc riêng để xem lại sau này.
   if (typeof body.feedback === "string" && body.feedback.trim()) {
-    await supabase.from("task_history").insert({ task_id: params.id, type: "feedback", content: body.feedback, created_by: userId });
+    await supabase.from("task_history").insert({
+      task_id: params.id,
+      type: "feedback",
+      content: body.feedback,
+      file_url: typeof body.file_url === "string" ? body.file_url : null,
+      file_name: typeof body.file_name === "string" ? body.file_name : null,
+      created_by: userId,
+    });
   }
   if (typeof body.result_text === "string") {
     await supabase.from("task_history").insert({ task_id: params.id, type: "result_edit", content: body.result_text, created_by: userId });

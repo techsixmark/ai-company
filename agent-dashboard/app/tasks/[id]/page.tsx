@@ -4,15 +4,22 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
-import type { Department, Profile, Task, TaskHistoryEntry } from "@/lib/types";
+import type { Department, Profile, Task, TaskApprovedFile, TaskHistoryEntry } from "@/lib/types";
 import { DepartmentBadge, StatusBadge } from "@/components/Badges";
 import { buildAndDownloadDocx, buildExportData, buildMarkdown, downloadTextFile, exportFileBaseName } from "@/lib/export";
+import { uploadTaskFile } from "@/lib/upload";
 
 const HISTORY_LABEL: Record<string, string> = {
   feedback: "💬 Phản hồi",
   result_edit: "✎ Sửa tay kết quả",
   agent_run: "🤖 Agent chạy xong",
 };
+
+function formatBytes(n: number | null) {
+  if (!n) return "";
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export default function TaskDetailPage() {
   const params = useParams();
@@ -34,6 +41,9 @@ export default function TaskDetailPage() {
   const [editingResult, setEditingResult] = useState(false);
   const [editResultText, setEditResultText] = useState("");
   const [savingResult, setSavingResult] = useState(false);
+  const [feedbackFile, setFeedbackFile] = useState<File | null>(null);
+  const [approvedFiles, setApprovedFiles] = useState<TaskApprovedFile[]>([]);
+  const [uploadingApproved, setUploadingApproved] = useState(false);
 
   async function load() {
     const { data: sessionData } = await supabase.auth.getSession();
@@ -43,13 +53,14 @@ export default function TaskDetailPage() {
     }
     setLoggedIn(true);
     const user = sessionData.session.user;
-    const [{ data: t }, { data: p }, { data: depts }, { data: children }, { data: allProfiles }, { data: hist }] = await Promise.all([
+    const [{ data: t }, { data: p }, { data: depts }, { data: children }, { data: allProfiles }, { data: hist }, { data: files }] = await Promise.all([
       supabase.from("tasks").select("*").eq("id", id).single(),
       supabase.from("profiles").select("*").eq("id", user.id).single(),
       supabase.from("departments").select("*"),
       supabase.from("tasks").select("*").eq("parent_task_id", id).order("created_at"),
       supabase.from("profiles").select("*"),
       supabase.from("task_history").select("*").eq("task_id", id).order("created_at", { ascending: false }),
+      supabase.from("task_approved_files").select("*").eq("task_id", id).order("created_at", { ascending: false }),
     ]);
     setTask(t as Task);
     setProfile(p as Profile);
@@ -57,6 +68,7 @@ export default function TaskDetailPage() {
     setSubtasks((children as Task[]) || []);
     setProfiles((allProfiles as Profile[]) || []);
     setHistory((hist as TaskHistoryEntry[]) || []);
+    setApprovedFiles((files as TaskApprovedFile[]) || []);
   }
 
   useEffect(() => {
@@ -151,6 +163,63 @@ export default function TaskDetailPage() {
   function userName(uid: string) {
     const p = profiles.find((x) => x.id === uid);
     return p?.full_name || p?.email || "?";
+  }
+
+  // Chủ doanh nghiệp comment để yêu cầu chỉnh sửa — có thể đính kèm 1 file tham khảo, tự lưu vào lịch sử (task_history)
+  async function submitFeedback() {
+    setBusy(true);
+    setError(null);
+    try {
+      const body: any = { status: "revise", feedback };
+      if (feedbackFile) {
+        const uploaded = await uploadTaskFile(id, "comments", feedbackFile);
+        body.file_url = uploaded.url;
+        body.file_name = uploaded.name;
+      }
+      const res = await authedFetch(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+      if (!res.ok) throw new Error((await res.json()).error);
+      setFeedback("");
+      setFeedbackFile(null);
+      await load();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Lưu file deliverable cuối cùng đã duyệt cho task này (có thể nhiều file / nhiều lần)
+  async function uploadApprovedFile(file: File) {
+    setUploadingApproved(true);
+    setError(null);
+    try {
+      const uploaded = await uploadTaskFile(id, "approved", file);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const uid = sessionData.session?.user.id;
+      const { error: insertError } = await supabase.from("task_approved_files").insert({
+        task_id: id,
+        file_url: uploaded.url,
+        file_name: uploaded.name,
+        file_size: uploaded.size,
+        uploaded_by: uid,
+      });
+      if (insertError) throw insertError;
+      await load();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setUploadingApproved(false);
+    }
+  }
+
+  async function deleteApprovedFile(fileId: string) {
+    if (!confirm("Xóa file này khỏi kho lưu trữ?")) return;
+    const { error: delError } = await supabase.from("task_approved_files").delete().eq("id", fileId);
+    if (delError) {
+      setError(delError.message);
+      return;
+    }
+    await load();
   }
 
   // Xuất kết quả task — gộp đầy đủ: mô tả, outcome, hỏi-đáp, phản hồi, và (với task CEO) kết quả thật của từng phòng ban
@@ -343,9 +412,64 @@ export default function TaskDetailPage() {
             value={feedback}
             onChange={(e) => setFeedback(e.target.value)}
           />
-          <button onClick={() => updateStatus("revise", feedback)} disabled={busy || !feedback} className="btn-ghost">
-            Yêu cầu chỉnh sửa
+          <div className="flex items-center gap-2 flex-wrap">
+            <label className="text-xs font-semibold text-ink-secondary border border-black/10 rounded-full px-3 py-1.5 cursor-pointer hover:bg-black/5">
+              📎 {feedbackFile ? feedbackFile.name : "Đính kèm file tham khảo"}
+              <input
+                type="file"
+                className="hidden"
+                onChange={(e) => setFeedbackFile(e.target.files?.[0] || null)}
+              />
+            </label>
+            {feedbackFile && (
+              <button onClick={() => setFeedbackFile(null)} className="text-xs text-ink-muted hover:underline">Bỏ file</button>
+            )}
+          </div>
+          <button onClick={submitFeedback} disabled={busy || !feedback} className="btn-ghost">
+            {busy ? "Đang gửi..." : "Yêu cầu chỉnh sửa"}
           </button>
+        </div>
+      )}
+
+      {(isAdmin || approvedFiles.length > 0) && (
+        <div className="card space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-ink-muted">📁 File deliverable đã duyệt ({approvedFiles.length})</div>
+            {isAdmin && (
+              <label className="text-xs font-semibold text-series-1 hover:underline cursor-pointer">
+                {uploadingApproved ? "Đang tải lên..." : "+ Thêm file"}
+                <input
+                  type="file"
+                  className="hidden"
+                  disabled={uploadingApproved}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) uploadApprovedFile(f);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            )}
+          </div>
+          {approvedFiles.length > 0 ? (
+            <div className="divide-y divide-black/5">
+              {approvedFiles.map((f) => (
+                <div key={f.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                  <a href={f.file_url} target="_blank" rel="noopener noreferrer" className="font-medium text-series-1 hover:underline truncate">
+                    📄 {f.file_name}
+                  </a>
+                  <span className="text-xs text-ink-muted flex-none flex items-center gap-2">
+                    {formatBytes(f.file_size)} · {userName(f.uploaded_by)} · {new Date(f.created_at).toLocaleDateString("vi-VN")}
+                    {isAdmin && (
+                      <button onClick={() => deleteApprovedFile(f.id)} className="text-status-critical hover:underline">Xóa</button>
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-ink-muted">Chưa có file nào — tải lên file cuối cùng đã hoàn thiện để lưu trữ.</p>
+          )}
         </div>
       )}
 
@@ -367,6 +491,11 @@ export default function TaskDetailPage() {
                   <span>· {new Date(h.created_at).toLocaleString("vi-VN")}</span>
                 </div>
                 <p className="text-sm whitespace-pre-wrap line-clamp-6">{h.content}</p>
+                {h.file_url && (
+                  <a href={h.file_url} target="_blank" rel="noopener noreferrer" className="text-xs text-series-1 hover:underline">
+                    📎 {h.file_name || "File đính kèm"}
+                  </a>
+                )}
               </div>
             ))}
           </div>
