@@ -5,10 +5,20 @@ export interface ChangelogEntry {
   changes: string[];
 }
 
-export const APP_VERSION = "0.13.1";
+export const APP_VERSION = "0.14.0";
 
 // Mới nhất đứng đầu. Mỗi lần release thêm 1 entry và cập nhật APP_VERSION.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.14.0",
+    date: "2026-07-27",
+    title: "Xuất file nhanh chỉnh chu hơn: bảng có viền, header tô màu + Excel mới",
+    changes: [
+      "Thêm 'Excel (.xlsx)' vào menu Xuất file nhanh — dựng bảng thật từ nội dung agent, có viền, header tô màu xanh chữ trắng, hàng xen kẽ dễ đọc, tự canh độ rộng cột",
+      "Xuất Word giờ cũng nhận diện bảng trong nội dung agent và dựng thành bảng thật (viền + header tô màu) thay vì in nguyên ký tự '|' — chữ **in đậm** cũng hiển thị đậm thay vì còn dấu **",
+      "Áp dụng đồng nhất cho mọi phần: Yêu cầu, Outcome, Phản hồi, Kết quả và kết quả từng phòng ban (task CEO)",
+    ],
+  },
   {
     version: "0.13.1",
     date: "2026-07-27",

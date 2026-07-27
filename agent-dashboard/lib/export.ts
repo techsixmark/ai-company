@@ -112,8 +112,111 @@ export function downloadTextFile(content: string, filename: string, mime: string
   URL.revokeObjectURL(url);
 }
 
+function stripMd(s: string): string {
+  return s
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/\*(.*?)\*/g, "$1")
+    .replace(/`(.*?)`/g, "$1")
+    .trim();
+}
+
+// ---- Nhận diện bảng markdown (| a | b |\n|---|---|\n| 1 | 2 |) trong nội dung agent trả về, để dựng
+// thành bảng thật (có viền, header tô màu) khi xuất Word/Excel — thay vì in nguyên văn ký tự "|". ----
+type ContentBlock = { type: "table"; header: string[]; rows: string[][] } | { type: "text"; text: string };
+
+function isSeparatorRow(line: string): boolean {
+  const t = line.trim();
+  if (!t.includes("-") || !t.includes("|")) return false;
+  return /^\|?[\s:|-]+\|?$/.test(t);
+}
+
+function splitTableRow(line: string): string[] {
+  let t = line.trim();
+  if (t.startsWith("|")) t = t.slice(1);
+  if (t.endsWith("|")) t = t.slice(0, -1);
+  return t.split("|").map((c) => stripMd(c));
+}
+
+function parseContentBlocks(md: string): ContentBlock[] {
+  const lines = md.split("\n");
+  const blocks: ContentBlock[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.includes("|") && lines[i + 1] !== undefined && isSeparatorRow(lines[i + 1])) {
+      const header = splitTableRow(line);
+      const rows: string[][] = [];
+      let j = i + 2;
+      while (j < lines.length && lines[j].includes("|") && lines[j].trim() !== "") {
+        rows.push(splitTableRow(lines[j]));
+        j++;
+      }
+      blocks.push({ type: "table", header, rows });
+      i = j;
+      continue;
+    }
+    blocks.push({ type: "text", text: line });
+    i++;
+  }
+  return blocks;
+}
+
+// Màu chuẩn dùng chung cho bảng khi xuất Word/Excel — header xanh đậm chữ trắng, hàng xen kẽ dễ đọc
+const TABLE_HEADER_FILL = "1F4E78";
+const TABLE_ROW_FILL_EVEN = "F2F6FC";
+const TABLE_BORDER_COLOR = "BFBFBF";
+
 export async function buildAndDownloadDocx(data: ExportData, filename: string) {
-  const { Document, Packer, Paragraph, HeadingLevel, TextRun } = await import("docx");
+  const { Document, Packer, Paragraph, HeadingLevel, TextRun, Table, TableRow, TableCell, WidthType, BorderStyle } = await import("docx");
+
+  function parseInlineBold(text: string) {
+    const parts = text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
+    if (!parts.length) return [new TextRun({ text: "" })];
+    return parts.map((part) => {
+      const m = part.match(/^\*\*([^*]+)\*\*$/);
+      return m ? new TextRun({ text: m[1], bold: true }) : new TextRun({ text: part });
+    });
+  }
+
+  function blocksToDocxNodes(md: string): any[] {
+    const border = { style: BorderStyle.SINGLE, size: 4, color: TABLE_BORDER_COLOR };
+    const tableBorders = { top: border, bottom: border, left: border, right: border, insideHorizontal: border, insideVertical: border };
+    const nodes: any[] = [];
+    for (const block of parseContentBlocks(md)) {
+      if (block.type === "text") {
+        nodes.push(new Paragraph({ children: parseInlineBold(block.text) }));
+        continue;
+      }
+      const colWidth = Math.floor(100 / Math.max(block.header.length, 1));
+      const headerRow = new TableRow({
+        tableHeader: true,
+        children: block.header.map(
+          (h) =>
+            new TableCell({
+              width: { size: colWidth, type: WidthType.PERCENTAGE },
+              shading: { fill: TABLE_HEADER_FILL },
+              children: [new Paragraph({ children: [new TextRun({ text: h, bold: true, color: "FFFFFF" })] })],
+            })
+        ),
+      });
+      const bodyRows = block.rows.map(
+        (row, i) =>
+          new TableRow({
+            children: block.header.map(
+              (_, ci) =>
+                new TableCell({
+                  width: { size: colWidth, type: WidthType.PERCENTAGE },
+                  shading: { fill: i % 2 === 0 ? TABLE_ROW_FILL_EVEN : "FFFFFF" },
+                  children: [new Paragraph({ text: row[ci] || "" })],
+                })
+            ),
+          })
+      );
+      nodes.push(new Table({ rows: [headerRow, ...bodyRows], width: { size: 100, type: WidthType.PERCENTAGE }, borders: tableBorders }));
+      nodes.push(new Paragraph({ text: "" }));
+    }
+    return nodes;
+  }
 
   const children: any[] = [
     new Paragraph({ text: data.title, heading: HeadingLevel.HEADING_1 }),
@@ -125,11 +228,11 @@ export async function buildAndDownloadDocx(data: ExportData, filename: string) {
   if (data.inputFile) children.push(new Paragraph({ text: `File input liên quan: ${data.inputFile}` }));
 
   children.push(new Paragraph({ text: "Yêu cầu", heading: HeadingLevel.HEADING_2 }));
-  data.description.split("\n").forEach((line) => children.push(new Paragraph({ text: line })));
+  children.push(...blocksToDocxNodes(data.description));
 
   if (data.expectedOutcome) {
     children.push(new Paragraph({ text: "Outcome đã xác nhận", heading: HeadingLevel.HEADING_2 }));
-    data.expectedOutcome.split("\n").forEach((line) => children.push(new Paragraph({ text: line })));
+    children.push(...blocksToDocxNodes(data.expectedOutcome));
   }
 
   if (data.clarifyQa.length) {
@@ -148,18 +251,18 @@ export async function buildAndDownloadDocx(data: ExportData, filename: string) {
 
   if (data.feedback) {
     children.push(new Paragraph({ text: "Phản hồi / yêu cầu chỉnh sửa gần nhất", heading: HeadingLevel.HEADING_2 }));
-    data.feedback.split("\n").forEach((line) => children.push(new Paragraph({ text: line })));
+    children.push(...blocksToDocxNodes(data.feedback));
   }
 
   children.push(new Paragraph({ text: data.isCeo ? "Kế hoạch phân việc của CEO" : "Kết quả", heading: HeadingLevel.HEADING_2 }));
-  (data.resultText || "(chưa có)").split("\n").forEach((line) => children.push(new Paragraph({ text: line })));
+  children.push(...blocksToDocxNodes(data.resultText || "(chưa có)"));
 
   if (data.isCeo && data.subtasks.length) {
     children.push(new Paragraph({ text: `Kết quả chi tiết từng phòng ban (${data.subtasks.length})`, heading: HeadingLevel.HEADING_2 }));
     data.subtasks.forEach((s, i) => {
       children.push(new Paragraph({ text: `${i + 1}. [${s.departmentLabel}] ${s.title}`, heading: HeadingLevel.HEADING_3 }));
       children.push(new Paragraph({ children: [new TextRun({ text: `Trạng thái: ${s.status}`, italics: true })] }));
-      (s.resultText || "(chưa có kết quả)").split("\n").forEach((line) => children.push(new Paragraph({ text: line })));
+      children.push(...blocksToDocxNodes(s.resultText || "(chưa có kết quả)"));
     });
   }
 
@@ -171,14 +274,6 @@ export async function buildAndDownloadDocx(data: ExportData, filename: string) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
-}
-
-function stripMd(s: string): string {
-  return s
-    .replace(/\*\*(.*?)\*\*/g, "$1")
-    .replace(/\*(.*?)\*/g, "$1")
-    .replace(/`(.*?)`/g, "$1")
-    .trim();
 }
 
 interface Slide {
@@ -235,4 +330,98 @@ export async function buildAndDownloadPptx(data: ExportData, filename: string) {
   });
 
   await pptx.writeFile({ fileName: filename });
+}
+
+// Xuất Excel — chỉ dựng được bảng thật (có viền, header tô màu, tự canh độ rộng cột) từ các bảng markdown
+// tìm thấy trong nội dung; phần văn bản thường (không phải bảng) được liệt kê thành các dòng ghi chú.
+export async function buildAndDownloadXlsx(data: ExportData, filename: string) {
+  const ExcelJS = (await import("exceljs")).default;
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("Kết quả", { views: [{ state: "frozen", ySplit: 0 }] });
+  let row = 1;
+
+  function writeTitle(text: string) {
+    const cell = sheet.getCell(row, 1);
+    cell.value = text;
+    cell.font = { bold: true, size: 13 };
+    row += 1;
+  }
+
+  function writeNote(text: string) {
+    sheet.getCell(row, 1).value = text;
+    row += 1;
+  }
+
+  function writeTable(block: Extract<ContentBlock, { type: "table" }>) {
+    const headerRow = sheet.getRow(row);
+    block.header.forEach((h, ci) => {
+      const cell = headerRow.getCell(ci + 1);
+      cell.value = h;
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${TABLE_HEADER_FILL}` } };
+      cell.border = { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } };
+      cell.alignment = { vertical: "middle", wrapText: true };
+    });
+    row += 1;
+
+    block.rows.forEach((r, ri) => {
+      const dataRow = sheet.getRow(row);
+      block.header.forEach((_, ci) => {
+        const cell = dataRow.getCell(ci + 1);
+        cell.value = r[ci] || "";
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ri % 2 === 0 ? `FF${TABLE_ROW_FILL_EVEN}` : "FFFFFFFF" } };
+        cell.border = { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } };
+        cell.alignment = { vertical: "middle", wrapText: true };
+      });
+      row += 1;
+    });
+    row += 1; // dòng trống ngăn cách
+  }
+
+  function writeContent(md: string) {
+    let sawTable = false;
+    for (const block of parseContentBlocks(md)) {
+      if (block.type === "table") {
+        sawTable = true;
+        writeTable(block);
+      } else if (block.text.trim()) {
+        writeNote(stripMd(block.text));
+      }
+    }
+    return sawTable;
+  }
+
+  writeTitle(data.title);
+  writeNote(`Phòng ban: ${data.departmentLabel} · Trạng thái: ${data.statusLabel} · Ngày tạo: ${data.createdAt}`);
+  row += 1;
+
+  writeTitle(data.isCeo ? "Kế hoạch phân việc của CEO" : "Kết quả");
+  writeContent(data.resultText || "(chưa có)");
+
+  if (data.isCeo && data.subtasks.length) {
+    data.subtasks.forEach((s, i) => {
+      row += 1;
+      writeTitle(`${i + 1}. [${s.departmentLabel}] ${s.title}`);
+      writeContent(s.resultText || "(chưa có kết quả)");
+    });
+  }
+
+  // Tự canh độ rộng cột theo nội dung dài nhất mỗi cột (giới hạn 12-60 ký tự)
+  sheet.columns.forEach((col) => {
+    let max = 12;
+    col.eachCell?.({ includeEmpty: false }, (cell) => {
+      const len = String(cell.value ?? "").length;
+      if (len > max) max = len;
+    });
+    col.width = Math.min(max + 2, 60);
+  });
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
