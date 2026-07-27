@@ -1,6 +1,8 @@
+import Anthropic from "@anthropic-ai/sdk";
+
 export const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
 
-// Model riêng cho tạo file chất lượng cao (viết code python-docx/pptx trong sandbox) — mặc định Opus
+// Model riêng cho tạo file chất lượng cao (viết code trong sandbox, dùng skill có sẵn của Anthropic) — mặc định Opus
 export const FILE_GEN_MODEL = process.env.ANTHROPIC_FILE_MODEL || "claude-opus-5";
 
 export async function callClaude(apiKey: string, system: string, user: string, maxTokens = 8000) {
@@ -30,9 +32,10 @@ export async function callClaude(apiKey: string, system: string, user: string, m
 }
 
 // ---- Tạo file thật (docx/pptx/xlsx/pdf) bằng Agent Skills + code execution ----
-// Đây là cùng cơ chế Claude Cowork dùng: Claude viết code Python (python-docx, python-pptx...)
-// trong sandbox của Anthropic, tự chạy, tự kiểm tra và sửa file cho đến khi đạt — chất lượng
-// cao hơn hẳn chuyển đổi markdown cơ học. File tạo ra được trả về qua Files API dạng file_id.
+// Đây là cùng cơ chế Claude Cowork dùng: Claude tự viết code trong sandbox của Anthropic theo
+// hướng dẫn của skill tương ứng (pptx dùng pptxgenjs/Node, docx/xlsx/pdf dùng thư viện Python),
+// tự chạy, tự kiểm tra và sửa file cho đến khi đạt — chất lượng cao hơn hẳn chuyển đổi markdown
+// cơ học. File tạo ra được trả về qua Files API dạng file_id.
 
 export type FileSkillId = "docx" | "pptx" | "xlsx" | "pdf";
 
@@ -50,34 +53,30 @@ function collectFileIds(node: any, ids: Set<string> = new Set()): Set<string> {
   return ids;
 }
 
+// Tạo file qua code execution (Claude viết + chạy script, có thể lặp lại nhiều vòng để tự sửa lỗi
+// và chạy script kiểm định) tốn RẤT nhiều output token — bắt buộc dùng streaming (SDK) để tránh
+// timeout request, và cần max_tokens cao để không bị cắt ngang giữa chừng trước khi file được tạo.
 export async function generateFileWithSkills(
   apiKey: string,
-  { skillId, prompt, maxTokens = 16000 }: { skillId: FileSkillId; prompt: string; maxTokens?: number }
+  { skillId, prompt, maxTokens = 64000 }: { skillId: FileSkillId; prompt: string; maxTokens?: number }
 ) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-beta": SKILLS_BETAS,
-    },
-    body: JSON.stringify({
-      model: FILE_GEN_MODEL,
-      max_tokens: maxTokens,
-      container: { skills: [{ type: "anthropic", skill_id: skillId, version: "latest" }] },
-      tools: [{ type: "code_execution_20260521", name: "code_execution" }],
-      messages: [{ role: "user", content: prompt }],
-    }),
-  });
-  if (!res.ok) throw new Error(`Anthropic API lỗi (tạo file): ${await res.text()}`);
-  const json = await res.json();
+  const client = new Anthropic({ apiKey });
+  const stream = client.beta.messages.stream({
+    model: FILE_GEN_MODEL,
+    max_tokens: maxTokens,
+    betas: SKILLS_BETAS.split(","),
+    container: { skills: [{ type: "anthropic", skill_id: skillId, version: "latest" }] },
+    tools: [{ type: "code_execution_20260521", name: "code_execution" }],
+    messages: [{ role: "user", content: prompt }],
+  } as any);
+  const message = await stream.finalMessage();
   return {
-    fileIds: Array.from(collectFileIds(json.content)),
-    text: json.content?.map((c: any) => c.text).filter(Boolean).join("\n") || "",
+    fileIds: Array.from(collectFileIds(message.content)),
+    text: message.content?.map((c: any) => c.text).filter(Boolean).join("\n") || "",
+    stopReason: message.stop_reason,
     usage: {
-      input: json.usage?.input_tokens || 0,
-      output: json.usage?.output_tokens || 0,
+      input: message.usage?.input_tokens || 0,
+      output: message.usage?.output_tokens || 0,
     },
   };
 }

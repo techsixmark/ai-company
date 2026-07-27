@@ -5,10 +5,20 @@ export interface ChangelogEntry {
   changes: string[];
 }
 
-export const APP_VERSION = "0.12.0";
+export const APP_VERSION = "0.12.1";
 
 // Mới nhất đứng đầu. Mỗi lần release thêm 1 entry và cập nhật APP_VERSION.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.12.1",
+    date: "2026-07-27",
+    title: "Sửa lỗi Tạo file bằng AI bị cắt ngang",
+    changes: [
+      "Sửa lỗi '🪄 Tạo file bằng AI' đôi khi không ra file: giới hạn token cho phép quá thấp (16.000) khiến Claude bị cắt ngang giữa lúc đang viết/chạy code, chưa kịp tạo xong file",
+      "Nâng giới hạn lên 64.000 token và chuyển sang gọi API dạng streaming (đúng khuyến nghị của Anthropic cho tác vụ sinh nhiều token) để tránh bị cắt hoặc timeout request",
+      "Khi vẫn thất bại, thông báo lỗi giờ nói rõ nguyên nhân (hết token hay lỗi khác) để biết cách thử lại",
+    ],
+  },
   {
     version: "0.12.0",
     date: "2026-07-27",

@@ -76,7 +76,7 @@ NỘI DUNG:
 ${content}`;
 
   try {
-    const { fileIds, text, usage } = await generateFileWithSkills(apiKey, { skillId, prompt });
+    const { fileIds, text, usage, stopReason } = await generateFileWithSkills(apiKey, { skillId, prompt });
 
     // Ghi token usage
     await supabase.from("usage_logs").insert({
@@ -89,8 +89,12 @@ ${content}`;
     });
 
     if (!fileIds.length) {
+      const reasonHint =
+        stopReason === "max_tokens"
+          ? " (AI bị cắt ngang do hết token cho phép trước khi tạo xong file — thử lại, nội dung dài có thể cần chia nhỏ hơn)"
+          : "";
       return NextResponse.json(
-        { error: `AI không tạo ra được file. Phản hồi: ${text.slice(0, 300) || "(trống)"}` },
+        { error: `AI không tạo ra được file${reasonHint}. Phản hồi: ${text.slice(0, 300) || "(trống)"}` },
         { status: 500 }
       );
     }
