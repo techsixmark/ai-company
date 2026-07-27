@@ -5,10 +5,18 @@ export interface ChangelogEntry {
   changes: string[];
 }
 
-export const APP_VERSION = "0.15.1";
+export const APP_VERSION = "0.15.2";
 
 // Mới nhất đứng đầu. Mỗi lần release thêm 1 entry và cập nhật APP_VERSION.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.15.2",
+    date: "2026-07-27",
+    title: "Trang Token usage tách theo dự án",
+    changes: [
+      "Thêm mục 'Theo dự án' vào trang Token usage — bấm vào từng dự án để xem chi tiết ngân sách",
+    ],
+  },
   {
     version: "0.15.1",
     date: "2026-07-27",

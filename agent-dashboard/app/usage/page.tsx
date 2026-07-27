@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
-import type { CompanySettings, Department, Profile } from "@/lib/types";
+import type { CompanySettings, Department, Profile, Project } from "@/lib/types";
 import { DEPT_EMOJI, seriesColor } from "@/components/Badges";
 import { estimateCost, PRICE_IN, PRICE_OUT } from "@/lib/pricing";
 
 interface UsageLog {
   id: string;
+  task_id: string | null;
   department_id: string | null;
   model: string;
   input_tokens: number;
@@ -24,6 +25,8 @@ function fmt(n: number) {
 export default function UsagePage() {
   const [logs, setLogs] = useState<UsageLog[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [projectByTaskId, setProjectByTaskId] = useState<Map<string, string>>(new Map());
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [me, setMe] = useState<Profile | null>(null);
   const [settings, setSettings] = useState<CompanySettings | null>(null);
@@ -43,11 +46,13 @@ export default function UsagePage() {
     setLoggedIn(true);
     const uid = sessionData.session.user.id;
     const since = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString();
-    const [{ data: ls }, { data: depts }, { data: pf }, { data: cs }] = await Promise.all([
+    const [{ data: ls }, { data: depts }, { data: pf }, { data: cs }, { data: pjs }, { data: tks }] = await Promise.all([
       supabase.from("usage_logs").select("*").gte("created_at", since).order("created_at", { ascending: false }),
       supabase.from("departments").select("*").order("color_slot"),
       supabase.from("profiles").select("*"),
       supabase.from("company_settings").select("*").single(),
+      supabase.from("projects").select("*").order("created_at", { ascending: false }),
+      supabase.from("tasks").select("id, project_id"),
     ]);
     setLogs((ls as UsageLog[]) || []);
     setDepartments((depts as Department[]) || []);
@@ -56,6 +61,8 @@ export default function UsagePage() {
     setMe(profs.find((p) => p.id === uid) || null);
     setSettings((cs as CompanySettings) || null);
     if (cs) setBudgetInput(cs.monthly_budget_usd != null ? String(cs.monthly_budget_usd) : "");
+    setProjects((pjs as Project[]) || []);
+    setProjectByTaskId(new Map(((tks as { id: string; project_id: string }[]) || []).map((t) => [t.id, t.project_id])));
   }
 
   useEffect(() => {
@@ -117,6 +124,17 @@ export default function UsagePage() {
     .filter((x) => x.tokens > 0)
     .sort((a, b) => b.tokens - a.tokens);
   const maxDeptTokens = Math.max(1, ...byDept.map((x) => x.tokens));
+
+  // Theo dự án — mỗi log gắn task_id, tra ngược ra project_id qua map đã tải sẵn
+  const byProject = projects
+    .map((proj) => {
+      const pl = logs.filter((l) => l.task_id && projectByTaskId.get(l.task_id) === proj.id);
+      const t = pl.reduce((s, l) => s + l.input_tokens + l.output_tokens, 0);
+      return { project: proj, tokens: t, calls: pl.length };
+    })
+    .filter((x) => x.tokens > 0)
+    .sort((a, b) => b.tokens - a.tokens);
+  const maxProjectTokens = Math.max(1, ...byProject.map((x) => x.tokens));
 
   // Theo người dùng
   const byUser = profiles
@@ -228,6 +246,29 @@ export default function UsagePage() {
             );
           })}
           {byDept.length === 0 && <p className="text-sm text-ink-muted text-center py-6">Chưa có lượt gọi agent nào trong khoảng thời gian này.</p>}
+        </div>
+      </section>
+      )}
+
+      {isAdmin && (
+      <section>
+        <div className="flex items-center justify-between mb-3">
+          <div className="label-micro">Theo dự án</div>
+          <Link href="/projects" className="text-xs font-semibold text-series-2">Xem tất cả dự án →</Link>
+        </div>
+        <div className="card space-y-3">
+          {byProject.map(({ project: proj, tokens, calls }) => (
+            <Link key={proj.id} href={`/projects/${proj.id}`} className="block hover:opacity-80">
+              <div className="flex items-center justify-between text-sm mb-1">
+                <span className="font-semibold">📁 {proj.name}</span>
+                <span className="text-ink-secondary">{fmt(tokens)} tok · {calls} lượt</span>
+              </div>
+              <div className="h-2.5 rounded-full bg-black/5 overflow-hidden">
+                <div className="h-full rounded-full bg-series-2" style={{ width: `${(tokens / maxProjectTokens) * 100}%` }} />
+              </div>
+            </Link>
+          ))}
+          {byProject.length === 0 && <p className="text-sm text-ink-muted text-center py-6">Chưa có lượt gọi agent nào trong khoảng thời gian này.</p>}
         </div>
       </section>
       )}
