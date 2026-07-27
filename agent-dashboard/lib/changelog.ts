@@ -5,10 +5,20 @@ export interface ChangelogEntry {
   changes: string[];
 }
 
-export const APP_VERSION = "0.12.4";
+export const APP_VERSION = "0.13.0";
 
 // Mới nhất đứng đầu. Mỗi lần release thêm 1 entry và cập nhật APP_VERSION.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.13.0",
+    date: "2026-07-27",
+    title: "Mẫu nội dung — chuẩn hoá đầu ra của AI",
+    changes: [
+      "Thêm trang 'Mẫu nội dung': 5 mẫu hướng dẫn trình bày (chung, Word, PowerPoint, Excel, PDF) được chèn thẳng vào lệnh gửi AI để kết quả chuẩn chỉnh, nhất quán hơn",
+      "Mẫu 'Hướng dẫn nội dung chung' áp dụng cho mọi lần agent phòng ban chạy task; 4 mẫu định dạng áp dụng khi tạo file bằng '🪄 Tạo file bằng AI'",
+      "Admin chỉnh sửa trực tiếp nội dung từng mẫu ngay trên trang — áp dụng ngay cho lần chạy tiếp theo, không cần deploy lại",
+    ],
+  },
   {
     version: "0.12.4",
     date: "2026-07-27",

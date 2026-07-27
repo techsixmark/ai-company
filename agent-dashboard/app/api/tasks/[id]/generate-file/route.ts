@@ -54,6 +54,13 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     .eq("parent_task_id", params.id)
     .order("created_at");
 
+  // Mẫu hướng dẫn trình bày riêng cho từng định dạng — admin chỉnh ở trang "Mẫu nội dung"
+  const { data: formatTemplate } = await supabase
+    .from("content_templates")
+    .select("content")
+    .eq("id", skillId)
+    .maybeSingle();
+
   let content = `# ${task.title}\n\n## Yêu cầu\n${task.description || "(không có)"}`;
   if (task.expected_outcome) content += `\n\n## Outcome đã cam kết với người giao việc (file phải bám sát)\n${task.expected_outcome}`;
   content += `\n\n## Nội dung chính\n${task.result_text}`;
@@ -71,7 +78,7 @@ Yêu cầu chất lượng:
 - Không bỏ sót nội dung quan trọng; sắp xếp lại cho mạch lạc thay vì dán nguyên văn.
 - Kiểm tra lại file sau khi tạo để chắc chắn mở được và định dạng đúng.
 - Đặt tên file ngắn gọn không dấu.
-
+${formatTemplate?.content ? `\n${formatTemplate.content}\n` : ""}
 NỘI DUNG:
 ${content}`;
 

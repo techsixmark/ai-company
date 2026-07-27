@@ -9,6 +9,14 @@ export interface Department {
   color_slot: number;
 }
 
+export interface ContentTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  content: string;
+  updated_at: string;
+}
+
 export interface Profile {
   id: string;
   email: string | null;

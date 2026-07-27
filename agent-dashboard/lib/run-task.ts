@@ -53,6 +53,13 @@ export async function runTaskAgent(supabase: any, task: any, userId: string) {
   const { data: departments } = await supabase.from("departments").select("*");
   const department = departments?.find((d: any) => d.id === task.department_id);
 
+  // Mẫu hướng dẫn trình bày/nội dung do admin quản lý ở trang "Mẫu nội dung" — chèn vào prompt để kết quả chuẩn chỉnh hơn
+  const { data: generalTemplate } = await supabase
+    .from("content_templates")
+    .select("content")
+    .eq("id", "general")
+    .maybeSingle();
+
   await supabase.from("tasks").update({ status: "running" }).eq("id", task.id);
 
   async function logUsage(usage: { input: number; output: number }) {
@@ -138,7 +145,8 @@ export async function runTaskAgent(supabase: any, task: any, userId: string) {
     const slideInstruction = wantsSlides
       ? ` Yêu cầu này cần trình bày dạng SLIDE/PowerPoint — hệ thống sẽ tự động chuyển văn bản của bạn thành file .pptx thật, vì vậy bắt buộc trình bày đúng cấu trúc: mỗi slide bắt đầu bằng dòng riêng "## Slide <số>: <tiêu đề ngắn>", theo sau là các gạch đầu dòng ("- ...") thật ngắn gọn (mỗi dòng tối đa ~12 từ, không viết đoạn văn dài). Không thêm chữ nào ngoài cấu trúc slide này.`
       : "";
-    const system = `Bạn là ${department?.agent_role || "chuyên gia"} của phòng "${department?.name}" (${department?.name_vi}) tại một công ty training nhân sự marketing. Mục tiêu của phòng: ${department?.goal}. Hãy thực hiện đúng yêu cầu của task được giao, trả về nội dung rõ ràng, có cấu trúc, sẵn sàng để người quản lý duyệt.${slideInstruction}`;
+    const templateInstruction = generalTemplate?.content ? `\n\n${generalTemplate.content}` : "";
+    const system = `Bạn là ${department?.agent_role || "chuyên gia"} của phòng "${department?.name}" (${department?.name_vi}) tại một công ty training nhân sự marketing. Mục tiêu của phòng: ${department?.goal}. Hãy thực hiện đúng yêu cầu của task được giao, trả về nội dung rõ ràng, có cấu trúc, sẵn sàng để người quản lý duyệt.${slideInstruction}${templateInstruction}`;
 
     let user = `Task: ${task.title}\n\nMô tả / kỳ vọng đầu ra:\n${task.description}`;
     user += taskContext(task);
