@@ -314,7 +314,7 @@ export default function TaskDetailPage() {
       if (!res.ok) {
         if (res.status === 504 || !json) {
           throw new Error(
-            "AI tạo file quá lâu và bị hủy do vượt quá 5 phút cho phép của server. Thử lại — nếu vẫn timeout, nội dung task có thể quá dài/phức tạp cho định dạng này."
+            "AI tạo file quá lâu và bị hủy do vượt quá 5 phút cho phép của server. Dùng nút '⬇ Xuất file' ở trên để có file ngay (nhanh, ổn định hơn), hoặc thử lại '🪄 Tạo file bằng AI' sau."
           );
         }
         throw new Error(json.error || `Tạo file lỗi (mã ${res.status})`);
@@ -627,9 +627,10 @@ export default function TaskDetailPage() {
 
           {task.result_text && (
             <div className="card space-y-2">
-              <div className="text-xs text-ink-muted">🪄 Tạo file bằng AI (chất lượng cao)</div>
+              <div className="text-xs text-ink-muted">🪄 Tạo file bằng AI (chất lượng cao, thử nghiệm)</div>
               <p className="text-[11px] text-ink-muted !mt-1 leading-relaxed">
-                Claude viết code tạo file thật trong sandbox, tự kiểm tra định dạng — như Claude Cowork. Mất 1–5 phút.
+                Claude viết code tạo file thật trong sandbox, tự kiểm tra định dạng — như Claude Cowork. Mất 1–5 phút,
+                đôi khi bị hủy do quá lâu. Nếu lỗi/timeout, dùng nút <b>⬇ Xuất file</b> ở trên — ra ngay trong vài giây.
               </p>
               <div className="grid grid-cols-2 gap-1.5">
                 {GEN_FORMATS.map((f) => (

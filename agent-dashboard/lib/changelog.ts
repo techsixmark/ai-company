@@ -5,10 +5,19 @@ export interface ChangelogEntry {
   changes: string[];
 }
 
-export const APP_VERSION = "0.12.3";
+export const APP_VERSION = "0.12.4";
 
 // Mới nhất đứng đầu. Mỗi lần release thêm 1 entry và cập nhật APP_VERSION.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.12.4",
+    date: "2026-07-27",
+    title: "Hướng dẫn dùng Xuất file nhanh khi AI timeout",
+    changes: [
+      "'🪄 Tạo file bằng AI' được đánh dấu 'thử nghiệm' — vẫn có thể timeout sau 5 phút do độ trễ của quy trình sandbox, không phụ thuộc model hay độ dài nội dung",
+      "Thông báo lỗi và ghi chú trong khu vực tạo file giờ hướng dẫn dùng nút '⬇ Xuất file' (Word/PDF/PowerPoint dựng nhanh bằng thư viện, luôn ra file trong vài giây) làm phương án ổn định thay thế",
+    ],
+  },
   {
     version: "0.12.3",
     date: "2026-07-27",
