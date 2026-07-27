@@ -5,10 +5,19 @@ export interface ChangelogEntry {
   changes: string[];
 }
 
-export const APP_VERSION = "0.12.1";
+export const APP_VERSION = "0.12.2";
 
 // Mới nhất đứng đầu. Mỗi lần release thêm 1 entry và cập nhật APP_VERSION.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.12.2",
+    date: "2026-07-27",
+    title: "Màn hình chờ khi tạo file bằng AI",
+    changes: [
+      "Thêm màn hình chờ toàn màn hình khi bấm '🪄 Tạo file bằng AI': hiệu ứng xoay, đếm giờ, xoay vòng thông báo từng bước để biết AI vẫn đang xử lý",
+      "Sửa lỗi hiện thông báo khó hiểu ('Unexpected token...') khi server bị timeout — giờ báo rõ 'AI tạo file quá lâu và bị hủy do vượt quá 5 phút cho phép'",
+    ],
+  },
   {
     version: "0.12.1",
     date: "2026-07-27",

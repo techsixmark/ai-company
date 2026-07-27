@@ -24,6 +24,22 @@ const GEN_FORMATS = [
   { id: "pdf", label: "PDF" },
 ] as const;
 
+// Không có tiến trình thật từ server (1 lượt gọi API duy nhất) — xoay vòng các bước để người dùng
+// biết AI vẫn đang làm việc trong lúc chờ (có thể mất vài phút).
+const GEN_STEPS = [
+  "Đọc kết quả task và outcome đã cam kết...",
+  "Lên cấu trúc nội dung file...",
+  "Viết code tạo file trong sandbox...",
+  "Chạy thử và kiểm tra định dạng...",
+  "Tinh chỉnh lại cho chuẩn trước khi lưu...",
+];
+
+function formatElapsed(sec: number) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
 function formatBytes(n: number | null) {
   if (!n) return "";
   if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
@@ -53,6 +69,8 @@ export default function TaskDetailPage() {
   const [savingResult, setSavingResult] = useState(false);
   const [feedbackFile, setFeedbackFile] = useState<File | null>(null);
   const [generatingFormat, setGeneratingFormat] = useState<string | null>(null);
+  const [genElapsed, setGenElapsed] = useState(0);
+  const [genStep, setGenStep] = useState(0);
   const [approvedFiles, setApprovedFiles] = useState<TaskApprovedFile[]>([]);
   const [uploadingApproved, setUploadingApproved] = useState(false);
   const [showApprovedForm, setShowApprovedForm] = useState(false);
@@ -91,6 +109,21 @@ export default function TaskDetailPage() {
   useEffect(() => {
     load();
   }, [id]);
+
+  // Đếm giờ + xoay vòng thông báo bước trong lúc chờ AI tạo file (không có tiến trình thật từ server)
+  useEffect(() => {
+    if (!generatingFormat) {
+      setGenElapsed(0);
+      setGenStep(0);
+      return;
+    }
+    const timer = setInterval(() => setGenElapsed((s) => s + 1), 1000);
+    const stepTimer = setInterval(() => setGenStep((s) => (s + 1) % GEN_STEPS.length), 4000);
+    return () => {
+      clearInterval(timer);
+      clearInterval(stepTimer);
+    };
+  }, [generatingFormat]);
 
   const dept = (deptId: string) => departments.find((d) => d.id === deptId);
   const isCeoTask = task?.department_id === "ceo";
@@ -270,8 +303,22 @@ export default function TaskDetailPage() {
         method: "POST",
         body: JSON.stringify({ format }),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Tạo file lỗi");
+      // Nếu server bị timeout (vượt 300s), Vercel trả về trang lỗi không phải JSON — tránh crash khi parse
+      const raw = await res.text();
+      let json: any = null;
+      try {
+        json = raw ? JSON.parse(raw) : null;
+      } catch {
+        // body không phải JSON — thường là timeout ở tầng hạ tầng
+      }
+      if (!res.ok) {
+        if (res.status === 504 || !json) {
+          throw new Error(
+            "AI tạo file quá lâu và bị hủy do vượt quá 5 phút cho phép của server. Thử lại — nếu vẫn timeout, nội dung task có thể quá dài/phức tạp cho định dạng này."
+          );
+        }
+        throw new Error(json.error || `Tạo file lỗi (mã ${res.status})`);
+      }
       await load();
     } catch (err: any) {
       setError(err.message);
@@ -598,7 +645,7 @@ export default function TaskDetailPage() {
               </div>
               {generatingFormat && (
                 <p className="text-[11px] text-status-warning font-semibold">
-                  ⏳ AI đang viết code và kiểm tra file — đừng rời trang (1–5 phút)...
+                  ⏳ AI đang xử lý — xem tiến trình ở màn hình chờ...
                 </p>
               )}
               {history.filter((h) => h.type === "file_generated" && h.file_url).length > 0 && (
@@ -830,6 +877,22 @@ export default function TaskDetailPage() {
               ))}
             </>
           )}
+        </div>
+      )}
+
+      {generatingFormat && (
+        <div className="fixed inset-0 z-50 bg-ink/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="card max-w-sm w-full text-center space-y-4 !py-8">
+            <div className="mx-auto w-12 h-12 rounded-full border-4 border-black/10 border-t-series-2 animate-spin" />
+            <div>
+              <div className="font-bold">
+                🪄 Đang tạo file {GEN_FORMATS.find((f) => f.id === generatingFormat)?.label}...
+              </div>
+              <p className="text-sm text-ink-secondary mt-1">{GEN_STEPS[genStep]}</p>
+            </div>
+            <div className="text-xs text-ink-muted tabular-nums">⏱ {formatElapsed(genElapsed)} — thường mất 1–5 phút</div>
+            <p className="text-[11px] text-ink-muted">Đừng đóng hoặc rời trang này.</p>
+          </div>
         </div>
       )}
     </div>
