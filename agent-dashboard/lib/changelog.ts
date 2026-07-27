@@ -5,10 +5,20 @@ export interface ChangelogEntry {
   changes: string[];
 }
 
-export const APP_VERSION = "0.11.0";
+export const APP_VERSION = "0.12.0";
 
 // Mới nhất đứng đầu. Mỗi lần release thêm 1 entry và cập nhật APP_VERSION.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.12.0",
+    date: "2026-07-27",
+    title: "AI QA tự kiểm tra chéo",
+    changes: [
+      "Sau khi agent phòng ban hoàn thành, một QA agent độc lập tự chấm điểm kết quả (1-10) so với yêu cầu và outcome cam kết, kèm nhận xét cụ thể",
+      "Badge điểm QA (🧪 x/10, tô màu xanh/vàng/đỏ) hiện trên Kanban, Bảng, danh sách Chờ duyệt ở Dashboard và trang chi tiết — chủ doanh nghiệp ưu tiên soi kỹ task điểm thấp",
+      "Điểm và nhận xét QA lưu vào lịch sử mỗi lần agent chạy lại",
+    ],
+  },
   {
     version: "0.11.0",
     date: "2026-07-27",

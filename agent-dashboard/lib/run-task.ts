@@ -155,12 +155,47 @@ export async function runTaskAgent(supabase: any, task: any, userId: string) {
 
     const { data: updated, error: updateError } = await supabase
       .from("tasks")
-      .update({ status: "review", result_text: resultText, feedback: null, auto_retry: false, last_error: null })
+      // qa_score reset về null để không hiển thị điểm của kết quả cũ cho kết quả mới
+      .update({ status: "review", result_text: resultText, feedback: null, auto_retry: false, last_error: null, qa_score: null, qa_notes: null })
       .eq("id", task.id)
       .select()
       .single();
     if (updateError) throw new RunError(updateError.message, false);
     await logHistory(resultText);
+
+    // ---- QA agent tự kiểm tra chéo: chấm điểm kết quả so với yêu cầu + outcome cam kết ----
+    // Lỗi ở bước QA không được làm hỏng kết quả chính — chỉ bỏ qua điểm chấm.
+    try {
+      const qaSystem = `Bạn là QA reviewer độc lập của một công ty training nhân sự marketing — người gác cổng cuối trước khi kết quả đến tay chủ doanh nghiệp. Hãy chấm điểm khắt khe và công tâm kết quả dưới đây so với yêu cầu gốc và outcome đã cam kết. Trả về DUY NHẤT một JSON object (không giải thích thêm): {"score": <số nguyên 1-10>, "notes": "<nhận xét tiếng Việt ≤80 từ: nêu cụ thể điểm đạt, thiếu sót nếu có, và 1 đề xuất cải thiện nếu điểm dưới 9>"}. Thang điểm: 9-10 = đạt outcome trọn vẹn, sẵn sàng dùng ngay; 6-8 = dùng được nhưng có thiếu sót cần lưu ý; 1-5 = chưa đạt outcome, nên yêu cầu chỉnh sửa.`;
+
+      let qaUser = `YÊU CẦU GỐC:\n${task.title}\n${task.description || ""}`;
+      if (task.expected_outcome) qaUser += `\n\nOUTCOME ĐÃ CAM KẾT:\n${task.expected_outcome}`;
+      qaUser += `\n\nKẾT QUẢ CẦN CHẤM:\n${resultText}`;
+
+      const { text: qaRaw, usage: qaUsage } = await callClaude(apiKey, qaSystem, qaUser, 2000);
+      await logUsage(qaUsage);
+
+      const match = qaRaw.match(/\{[\s\S]*\}/);
+      if (match) {
+        const qa = JSON.parse(match[0]);
+        const score = Math.max(1, Math.min(10, Math.round(Number(qa.score))));
+        const notes = typeof qa.notes === "string" ? qa.notes.trim() : "";
+        if (Number.isFinite(score) && notes) {
+          await supabase.from("tasks").update({ qa_score: score, qa_notes: notes }).eq("id", task.id);
+          await supabase.from("task_history").insert({
+            task_id: task.id,
+            type: "qa_review",
+            content: `Điểm ${score}/10 — ${notes}`,
+            created_by: userId,
+          });
+          updated.qa_score = score;
+          updated.qa_notes = notes;
+        }
+      }
+    } catch {
+      // QA thất bại: kết quả chính vẫn hợp lệ, không chấm điểm lần này
+    }
+
     return { task: updated };
   } catch (err: any) {
     const retryable = err instanceof RunError ? err.retryable : false;

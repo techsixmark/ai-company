@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import type { Department, Task, TaskStatus } from "@/lib/types";
-import { StatusBadge, DueDateBadge, DEPT_EMOJI, seriesColor } from "@/components/Badges";
+import { StatusBadge, DueDateBadge, QaBadge, DEPT_EMOJI, seriesColor } from "@/components/Badges";
 
 export default function TasksPage() {
   const router = useRouter();
@@ -160,6 +160,7 @@ export default function TasksPage() {
                         <td className="px-4 py-2.5">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <StatusBadge status={t.status} />
+                            <QaBadge score={t.qa_score} />
                             <DueDateBadge dueDate={t.due_date} done={t.status === "done"} />
                           </div>
                         </td>
@@ -207,7 +208,10 @@ export default function TasksPage() {
                         {t.title}
                       </div>
                       <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <StatusBadge status={t.status} />
+                        <span className="flex items-center gap-1.5">
+                          <StatusBadge status={t.status} />
+                          <QaBadge score={t.qa_score} />
+                        </span>
                         {t.due_date ? (
                           <DueDateBadge dueDate={t.due_date} done={t.status === "done"} />
                         ) : (

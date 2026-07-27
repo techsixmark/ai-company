@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import type { Department, Profile, Task } from "@/lib/types";
-import { DepartmentBadge, StatusBadge, DEPT_EMOJI, seriesColor } from "@/components/Badges";
+import { DepartmentBadge, StatusBadge, QaBadge, DEPT_EMOJI, seriesColor } from "@/components/Badges";
 
 export default function DashboardPage() {
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
@@ -108,7 +108,10 @@ export default function DashboardPage() {
               {review.slice(0, 5).map((t) => (
                 <Link key={t.id} href={`/tasks/${t.id}`} className="flex items-center justify-between px-4 py-2.5 text-sm hover:bg-black/[0.02] gap-2">
                   <span className="font-medium truncate">{t.title}</span>
-                  <DepartmentBadge department={departments.find((d) => d.id === t.department_id)} />
+                  <span className="flex items-center gap-1.5 flex-none">
+                    <QaBadge score={t.qa_score} />
+                    <DepartmentBadge department={departments.find((d) => d.id === t.department_id)} />
+                  </span>
                 </Link>
               ))}
               {review.length === 0 && <div className="px-4 py-6 text-sm text-ink-muted text-center">Không có task chờ duyệt 🎉</div>}

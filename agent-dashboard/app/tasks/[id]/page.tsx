@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import type { Department, Profile, Task, TaskApprovedFile, TaskHistoryEntry } from "@/lib/types";
-import { DepartmentBadge, StatusBadge, DueDateBadge } from "@/components/Badges";
+import { DepartmentBadge, StatusBadge, DueDateBadge, QaBadge } from "@/components/Badges";
 import { buildAndDownloadDocx, buildAndDownloadPptx, buildExportData, buildMarkdown, downloadTextFile, exportFileBaseName } from "@/lib/export";
 import { uploadTaskFile } from "@/lib/upload";
 
@@ -14,6 +14,7 @@ const HISTORY_LABEL: Record<string, string> = {
   result_edit: "✎ Sửa tay kết quả",
   agent_run: "🤖 Agent chạy xong",
   file_generated: "🪄 AI tạo file",
+  qa_review: "🧪 QA chấm điểm",
 };
 
 const GEN_FORMATS = [
@@ -368,6 +369,7 @@ export default function TaskDetailPage() {
           <DepartmentBadge department={dept(task.department_id)} />
           <StatusBadge status={task.status} />
           <DueDateBadge dueDate={task.due_date} done={task.status === "done"} />
+          <QaBadge score={task.qa_score} />
           {task.auto_retry && (
             <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-status-warning/15 text-status-warning">
               ⏳ Chờ tự động thử lại
@@ -477,6 +479,16 @@ export default function TaskDetailPage() {
             </div>
           )}
 
+          {task.qa_score != null && (
+            <div className={`card space-y-1.5 border-l-4 ${task.qa_score >= 9 ? "!border-l-status-good" : task.qa_score >= 6 ? "!border-l-status-warning" : "!border-l-status-critical"}`}>
+              <div className="flex items-center gap-2">
+                <div className="text-xs text-ink-muted">🧪 QA agent tự kiểm tra chéo</div>
+                <QaBadge score={task.qa_score} />
+              </div>
+              {task.qa_notes && <p className="text-sm whitespace-pre-wrap">{task.qa_notes}</p>}
+            </div>
+          )}
+
           {isCeoTask && subtasks.length > 0 && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -496,6 +508,7 @@ export default function TaskDetailPage() {
                   <Link key={s.id} href={`/tasks/${s.id}`} className="flex items-center justify-between px-4 py-2.5 text-sm hover:bg-black/[0.02] gap-2">
                     <span className="font-medium truncate">{s.title}</span>
                     <span className="flex items-center gap-2 flex-none ml-3">
+                      <QaBadge score={s.qa_score} />
                       <DueDateBadge dueDate={s.due_date} done={s.status === "done"} />
                       <DepartmentBadge department={dept(s.department_id)} />
                       <StatusBadge status={s.status} />

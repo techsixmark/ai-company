@@ -65,6 +65,21 @@ export function StatusBadge({ status }: { status: TaskStatus }) {
   );
 }
 
+// Điểm QA agent tự chấm: xanh ≥9 (đạt trọn vẹn), vàng 6-8 (có thiếu sót), đỏ ≤5 (chưa đạt)
+export function QaBadge({ score }: { score: number | null | undefined }) {
+  if (score == null) return null;
+  const color = score >= 9 ? "#0ca30c" : score >= 6 ? "#c98500" : "#d03b3b";
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full"
+      style={{ backgroundColor: `${color}1f`, color }}
+      title="Điểm QA agent tự chấm so với outcome cam kết"
+    >
+      🧪 {score}/10
+    </span>
+  );
+}
+
 export function DueDateBadge({ dueDate, done }: { dueDate: string | null | undefined; done: boolean }) {
   if (!dueDate) return null;
   const isOverdue = !done && new Date(dueDate + "T23:59:59") < new Date();
