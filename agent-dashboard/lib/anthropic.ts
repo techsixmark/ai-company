@@ -2,8 +2,11 @@ import Anthropic from "@anthropic-ai/sdk";
 
 export const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
 
-// Model riêng cho tạo file chất lượng cao (viết code trong sandbox, dùng skill có sẵn của Anthropic) — mặc định Opus
-export const FILE_GEN_MODEL = process.env.ANTHROPIC_FILE_MODEL || "claude-opus-5";
+// Model riêng cho tạo file (viết code trong sandbox, dùng skill có sẵn của Anthropic).
+// Dùng Sonnet 5 (không phải Opus) vì tốc độ nhanh hơn đáng kể — Opus 5 hay vượt quá 300s
+// giới hạn function của Vercel với file phức tạp nhiều vòng lặp code+kiểm định; chất lượng
+// Sonnet 5 vẫn rất gần Opus cho tác vụ này.
+export const FILE_GEN_MODEL = process.env.ANTHROPIC_FILE_MODEL || "claude-sonnet-5";
 
 export async function callClaude(apiKey: string, system: string, user: string, maxTokens = 8000) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {

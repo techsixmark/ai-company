@@ -5,10 +5,18 @@ export interface ChangelogEntry {
   changes: string[];
 }
 
-export const APP_VERSION = "0.12.2";
+export const APP_VERSION = "0.12.3";
 
 // Mới nhất đứng đầu. Mỗi lần release thêm 1 entry và cập nhật APP_VERSION.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.12.3",
+    date: "2026-07-27",
+    title: "Đổi model tạo file sang Sonnet 5 để tránh timeout",
+    changes: [
+      "Model tạo file bằng AI ('🪄 Tạo file bằng AI') chuyển từ Opus 5 sang Sonnet 5 — nhanh hơn đáng kể, giảm nguy cơ vượt quá 5 phút giới hạn của server với file nhiều nội dung, chất lượng vẫn rất gần Opus",
+    ],
+  },
   {
     version: "0.12.2",
     date: "2026-07-27",
