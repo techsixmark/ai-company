@@ -114,6 +114,7 @@ export async function runTaskAgent(supabase: any, task: any, userId: string) {
           description: s.description,
           department_id: s.department_id,
           parent_task_id: task.id,
+          project_id: task.project_id,
           created_by: userId,
         }))
       );

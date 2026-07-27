@@ -86,6 +86,16 @@ function IconFolder() {
   );
 }
 
+function IconLayers() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="12 2 2 7 12 12 22 7 12 2" />
+      <polyline points="2 17 12 22 22 17" />
+      <polyline points="2 12 12 17 22 12" />
+    </svg>
+  );
+}
+
 function IconWand() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -108,6 +118,7 @@ const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: IconGrid },
   { href: "/tasks", label: "Task", icon: IconList },
   { href: "/tasks/new", label: "Giao việc", icon: IconPlus },
+  { href: "/projects", label: "Dự án", icon: IconLayers },
   { href: "/departments", label: "Phòng ban", icon: IconBuilding },
   { href: "/documents", label: "Tài liệu", icon: IconFolder },
   { href: "/templates", label: "Mẫu nội dung", icon: IconWand },
@@ -119,6 +130,7 @@ const NAV_ITEMS = [
 function isActive(pathname: string, href: string) {
   if (href === "/") return pathname === "/";
   if (href === "/tasks") return pathname === "/tasks" || (pathname.startsWith("/tasks/") && pathname !== "/tasks/new");
+  if (href === "/projects") return pathname === "/projects" || pathname.startsWith("/projects/");
   return pathname === href;
 }
 

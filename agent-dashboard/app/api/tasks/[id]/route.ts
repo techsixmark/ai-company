@@ -28,6 +28,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (typeof body.result_text === "string") update.result_text = body.result_text;
   if ("due_date" in body) update.due_date = body.due_date || null;
   if ("assignee_id" in body) update.assignee_id = body.assignee_id || null;
+  if (typeof body.project_id === "string" && body.project_id) update.project_id = body.project_id;
 
   // RLS quyết định ai được phép update (chủ task hoặc admin) — route chỉ chuyển tiếp yêu cầu.
   const { data, error } = await supabase.from("tasks").update(update).eq("id", params.id).select().single();

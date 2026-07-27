@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
-import type { Department, Profile, Task, TaskApprovedFile, TaskHistoryEntry } from "@/lib/types";
+import type { Department, Profile, Project, Task, TaskApprovedFile, TaskHistoryEntry } from "@/lib/types";
 import { DepartmentBadge, StatusBadge, DueDateBadge, QaBadge } from "@/components/Badges";
 import { buildAndDownloadDocx, buildAndDownloadPptx, buildAndDownloadXlsx, buildExportData, buildMarkdown, downloadTextFile, exportFileBaseName } from "@/lib/export";
 import { uploadTaskFile } from "@/lib/upload";
@@ -53,6 +53,7 @@ export default function TaskDetailPage() {
   const [task, setTask] = useState<Task | null>(null);
   const [subtasks, setSubtasks] = useState<Task[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [myId, setMyId] = useState<string | null>(null);
@@ -89,7 +90,7 @@ export default function TaskDetailPage() {
     setLoggedIn(true);
     const user = sessionData.session.user;
     setMyId(user.id);
-    const [{ data: t }, { data: p }, { data: depts }, { data: children }, { data: allProfiles }, { data: hist }, { data: files }] = await Promise.all([
+    const [{ data: t }, { data: p }, { data: depts }, { data: children }, { data: allProfiles }, { data: hist }, { data: files }, { data: pjs }] = await Promise.all([
       supabase.from("tasks").select("*").eq("id", id).single(),
       supabase.from("profiles").select("*").eq("id", user.id).single(),
       supabase.from("departments").select("*"),
@@ -97,9 +98,11 @@ export default function TaskDetailPage() {
       supabase.from("profiles").select("*"),
       supabase.from("task_history").select("*").eq("task_id", id).order("created_at", { ascending: false }),
       supabase.from("task_approved_files").select("*").eq("task_id", id).order("created_at", { ascending: false }),
+      supabase.from("projects").select("*").order("created_at", { ascending: false }),
     ]);
     setTask(t as Task);
     setProfile(p as Profile);
+    setProjects((pjs as Project[]) || []);
     setDepartments((depts as Department[]) || []);
     setSubtasks((children as Task[]) || []);
     setProfiles((allProfiles as Profile[]) || []);
@@ -424,7 +427,10 @@ export default function TaskDetailPage() {
       )}
 
       <div>
-        <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <Link href={`/projects/${task.project_id}`} className="text-xs font-semibold text-series-2 hover:underline">
+          📁 {projects.find((p) => p.id === task.project_id)?.name || "—"}
+        </Link>
+        <div className="flex items-center gap-2 mt-1 mb-2 flex-wrap">
           <DepartmentBadge department={dept(task.department_id)} />
           <StatusBadge status={task.status} />
           <DueDateBadge dueDate={task.due_date} done={task.status === "done"} />
@@ -597,6 +603,24 @@ export default function TaskDetailPage() {
           <div className="card space-y-3">
             <div className="text-xs text-ink-muted">Chi tiết</div>
             <div className="space-y-2 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-ink-muted">Dự án</span>
+                {canEditMeta && !task.parent_task_id ? (
+                  <select
+                    className="border border-black/10 rounded-md px-2 py-1 text-xs max-w-[140px]"
+                    value={task.project_id}
+                    onChange={(e) => saveMeta({ project_id: e.target.value })}
+                  >
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <Link href={`/projects/${task.project_id}`} className="font-medium truncate max-w-[140px] text-series-2 hover:underline">
+                    {projects.find((p) => p.id === task.project_id)?.name || "—"}
+                  </Link>
+                )}
+              </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-ink-muted">Hạn chót</span>
                 {canEditMeta ? (

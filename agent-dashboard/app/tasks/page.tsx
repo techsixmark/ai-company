@@ -4,16 +4,18 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
-import type { Department, Task, TaskStatus } from "@/lib/types";
+import type { Department, Project, Task, TaskStatus } from "@/lib/types";
 import { StatusBadge, DueDateBadge, QaBadge, DEPT_EMOJI, seriesColor } from "@/components/Badges";
 
 export default function TasksPage() {
   const router = useRouter();
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [historyByTask, setHistoryByTask] = useState<Map<string, string>>(new Map());
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
   const [statusFilter, setStatusFilter] = useState<TaskStatus | "">("");
+  const [projectFilter, setProjectFilter] = useState("");
   const [search, setSearch] = useState("");
   const [view, setView] = useState<"kanban" | "table">("kanban");
 
@@ -40,10 +42,11 @@ export default function TasksPage() {
         return;
       }
       setLoggedIn(true);
-      const [{ data: depts }, { data: tks }, { data: hist }] = await Promise.all([
+      const [{ data: depts }, { data: tks }, { data: hist }, { data: pjs }] = await Promise.all([
         supabase.from("departments").select("*").order("color_slot"),
         supabase.from("tasks").select("*").order("created_at", { ascending: false }),
         supabase.from("task_history").select("task_id, content"),
+        supabase.from("projects").select("*").order("created_at", { ascending: false }),
       ]);
       // CEO đứng đầu bảng Kanban
       const sorted = ((depts as Department[]) || []).sort((a, b) =>
@@ -51,6 +54,7 @@ export default function TasksPage() {
       );
       setDepartments(sorted);
       setTasks((tks as Task[]) || []);
+      setProjects((pjs as Project[]) || []);
       // Gộp toàn bộ nội dung comment/phản hồi của từng task thành 1 chuỗi để tìm kiếm
       const map = new Map<string, string>();
       ((hist as { task_id: string; content: string }[]) || []).forEach((h) => {
@@ -65,11 +69,14 @@ export default function TasksPage() {
     const q = search.trim().toLowerCase();
     return tasks.filter((t) => {
       if (statusFilter && t.status !== statusFilter) return false;
+      if (projectFilter && t.project_id !== projectFilter) return false;
       if (!q) return true;
       const haystack = `${t.title} ${t.description} ${t.result_text || ""} ${t.expected_outcome || ""} ${historyByTask.get(t.id) || ""}`.toLowerCase();
       return haystack.includes(q);
     });
-  }, [tasks, statusFilter, search, historyByTask]);
+  }, [tasks, statusFilter, projectFilter, search, historyByTask]);
+
+  const projectName = (id: string) => projects.find((p) => p.id === id)?.name || "—";
 
   if (loggedIn === false) {
     return (
@@ -103,6 +110,12 @@ export default function TasksPage() {
           <option value="review">Chờ duyệt</option>
           <option value="done">Đã duyệt</option>
           <option value="revise">Cần chỉnh sửa</option>
+        </select>
+        <select className="border border-black/10 rounded-full px-3 py-1.5 text-sm font-medium" value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)}>
+          <option value="">Tất cả dự án</option>
+          {projects.map((p) => (
+            <option key={p.id} value={p.id}>📁 {p.name}</option>
+          ))}
         </select>
         <div className="ml-auto flex rounded-full border border-black/10 overflow-hidden text-sm font-semibold">
           <button
@@ -150,9 +163,12 @@ export default function TasksPage() {
                         className="border-b border-black/5 hover:bg-black/[0.02] cursor-pointer"
                         onClick={() => router.push(`/tasks/${t.id}`)}
                       >
-                        <td className="px-4 py-2.5 font-semibold max-w-[260px] truncate">
-                          {t.parent_task_id && <span className="text-ink-muted font-normal">↳ </span>}
-                          {t.title}
+                        <td className="px-4 py-2.5 max-w-[260px]">
+                          <div className="font-semibold truncate">
+                            {t.parent_task_id && <span className="text-ink-muted font-normal">↳ </span>}
+                            {t.title}
+                          </div>
+                          <div className="text-[11px] text-ink-muted truncate">📁 {projectName(t.project_id)}</div>
                         </td>
                         <td className="px-4 py-2.5 text-ink-secondary max-w-[240px] truncate">
                           {t.expected_outcome ? t.expected_outcome.replace(/\n/g, " · ") : "—"}
@@ -203,10 +219,11 @@ export default function TasksPage() {
                       href={`/tasks/${t.id}`}
                       className="block bg-white rounded-xl border border-black/5 p-3 hover:border-black/20 transition-colors"
                     >
-                      <div className="text-sm font-semibold leading-snug mb-2">
+                      <div className="text-sm font-semibold leading-snug">
                         {t.parent_task_id && <span className="text-ink-muted font-normal">↳ </span>}
                         {t.title}
                       </div>
+                      <div className="text-[11px] text-ink-muted truncate mb-2">📁 {projectName(t.project_id)}</div>
                       <div className="flex items-center justify-between gap-2 flex-wrap">
                         <span className="flex items-center gap-1.5">
                           <StatusBadge status={t.status} />

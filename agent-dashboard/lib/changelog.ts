@@ -5,10 +5,23 @@ export interface ChangelogEntry {
   changes: string[];
 }
 
-export const APP_VERSION = "0.14.0";
+export const APP_VERSION = "0.15.0";
 
 // Mới nhất đứng đầu. Mỗi lần release thêm 1 entry và cập nhật APP_VERSION.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.15.0",
+    date: "2026-07-27",
+    title: "Dự án — nhóm task lại để dễ kiểm soát",
+    changes: [
+      "Thêm mục 'Dự án' — mỗi task bắt buộc thuộc 1 dự án; task cũ được tự động gộp vào dự án 'Chưa phân loại'",
+      "Trang Dự án: tạo/lưu trữ dự án, xem tiến độ (số task, chờ duyệt, đã duyệt) từng dự án",
+      "Trang chi tiết dự án: danh sách task riêng của dự án đó",
+      "Giao việc mới bắt buộc chọn dự án — tạo nhanh dự án mới ngay trong form, không cần rời trang",
+      "Task con do CEO tự phân việc tự động thuộc cùng dự án với task cha",
+      "Lọc task theo dự án ở trang Task (Kanban/Bảng); dự án hiện trên mỗi task và có thể đổi ở trang chi tiết task",
+    ],
+  },
   {
     version: "0.14.0",
     date: "2026-07-27",

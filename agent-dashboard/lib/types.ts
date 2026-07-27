@@ -55,11 +55,21 @@ export interface TaskApprovedFile {
   created_at: string;
 }
 
+export interface Project {
+  id: string;
+  name: string;
+  description: string | null;
+  status: "active" | "archived";
+  created_by: string;
+  created_at: string;
+}
+
 export interface Task {
   id: string;
   title: string;
   description: string;
   department_id: string;
+  project_id: string;
   status: TaskStatus;
   input_file: string | null;
   expected_outcome: string | null;

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
-import type { ClarifyQA, Department, Profile, Task } from "@/lib/types";
+import type { ClarifyQA, Department, Profile, Project, Task } from "@/lib/types";
 import { DepartmentBadge, StatusBadge } from "@/components/Badges";
 
 type Step = 1 | 2 | 3;
@@ -19,12 +19,17 @@ export default function NewTaskPage() {
   const router = useRouter();
   const [departments, setDepartments] = useState<Department[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [recentTasks, setRecentTasks] = useState<Task[]>([]);
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
 
   const [step, setStep] = useState<Step>(1);
   const [title, setTitle] = useState("");
   const [departmentId, setDepartmentId] = useState("ceo");
+  const [projectId, setProjectId] = useState("");
+  const [creatingProject, setCreatingProject] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [creatingProjectBusy, setCreatingProjectBusy] = useState(false);
   const [description, setDescription] = useState("");
   const [inputFile, setInputFile] = useState("");
   const [dueDate, setDueDate] = useState("");
@@ -40,10 +45,11 @@ export default function NewTaskPage() {
       const { data: sessionData } = await supabase.auth.getSession();
       setLoggedIn(!!sessionData.session);
       if (!sessionData.session) return;
-      const [{ data: depts }, { data: tks }, { data: pf }] = await Promise.all([
+      const [{ data: depts }, { data: tks }, { data: pf }, { data: pjs }] = await Promise.all([
         supabase.from("departments").select("*").order("color_slot"),
         supabase.from("tasks").select("*").is("parent_task_id", null).order("created_at", { ascending: false }).limit(10),
         supabase.from("profiles").select("*"),
+        supabase.from("projects").select("*").eq("status", "active").order("created_at", { ascending: false }),
       ]);
       const sorted = ((depts as Department[]) || []).sort((a, b) =>
         a.id === "ceo" ? -1 : b.id === "ceo" ? 1 : a.color_slot - b.color_slot
@@ -51,9 +57,34 @@ export default function NewTaskPage() {
       setDepartments(sorted);
       setRecentTasks((tks as Task[]) || []);
       setProfiles((pf as Profile[]) || []);
+      const activeProjects = (pjs as Project[]) || [];
+      setProjects(activeProjects);
+      if (activeProjects.length === 1) setProjectId(activeProjects[0].id);
     }
     load();
   }, []);
+
+  async function createProjectInline() {
+    if (!newProjectName.trim()) return;
+    setCreatingProjectBusy(true);
+    setError(null);
+    const { data: sessionData } = await supabase.auth.getSession();
+    const { data, error: insertError } = await supabase
+      .from("projects")
+      .insert({ name: newProjectName.trim(), created_by: sessionData.session!.user.id })
+      .select()
+      .single();
+    if (insertError) {
+      setError(insertError.message);
+      setCreatingProjectBusy(false);
+      return;
+    }
+    setProjects((prev) => [data as Project, ...prev]);
+    setProjectId((data as Project).id);
+    setNewProjectName("");
+    setCreatingProject(false);
+    setCreatingProjectBusy(false);
+  }
 
   const isCeo = departmentId === "ceo";
 
@@ -127,6 +158,7 @@ export default function NewTaskPage() {
         title,
         description,
         department_id: departmentId,
+        project_id: projectId,
         input_file: inputFile || null,
         expected_outcome: outcome,
         clarify_qa: qa,
@@ -180,6 +212,46 @@ export default function NewTaskPage() {
         {/* ---- Bước 1: mô tả yêu cầu ---- */}
         {step === 1 && (
           <form onSubmit={handleAskQuestions} className="space-y-3">
+            <div>
+              <label className="text-xs text-ink-muted">Dự án</label>
+              {!creatingProject ? (
+                <div className="flex gap-2">
+                  <select required className={inputCls} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+                    <option value="" disabled>— Chọn dự án —</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                  <button type="button" onClick={() => setCreatingProject(true)} className="btn-ghost !px-3 !text-xs flex-none">
+                    + Mới
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <input
+                    autoFocus
+                    className={inputCls}
+                    value={newProjectName}
+                    onChange={(e) => setNewProjectName(e.target.value)}
+                    placeholder="Tên dự án mới"
+                  />
+                  <button
+                    type="button"
+                    onClick={createProjectInline}
+                    disabled={creatingProjectBusy || !newProjectName.trim()}
+                    className="btn-good !px-3 !text-xs flex-none"
+                  >
+                    {creatingProjectBusy ? "..." : "Tạo"}
+                  </button>
+                  <button type="button" onClick={() => setCreatingProject(false)} className="btn-ghost !px-3 !text-xs flex-none">
+                    Hủy
+                  </button>
+                </div>
+              )}
+              {projects.length === 0 && !creatingProject && (
+                <p className="text-xs text-ink-muted mt-1">Chưa có dự án nào — bấm &quot;+ Mới&quot; để tạo dự án đầu tiên.</p>
+              )}
+            </div>
             <div>
               <label className="text-xs text-ink-muted">Giao cho</label>
               <select className={inputCls} value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}>
@@ -274,6 +346,10 @@ export default function NewTaskPage() {
             <div className="card !p-0 overflow-hidden">
               <table className="w-full text-sm">
                 <tbody className="divide-y divide-black/5">
+                  <tr>
+                    <td className="px-4 py-2.5 text-xs text-ink-muted w-32 align-top">Dự án</td>
+                    <td className="px-4 py-2.5 font-semibold">📁 {projects.find((p) => p.id === projectId)?.name || "—"}</td>
+                  </tr>
                   <tr>
                     <td className="px-4 py-2.5 text-xs text-ink-muted w-32 align-top">Giao cho</td>
                     <td className="px-4 py-2.5">
