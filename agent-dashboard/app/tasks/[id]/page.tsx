@@ -13,7 +13,15 @@ const HISTORY_LABEL: Record<string, string> = {
   feedback: "💬 Phản hồi",
   result_edit: "✎ Sửa tay kết quả",
   agent_run: "🤖 Agent chạy xong",
+  file_generated: "🪄 AI tạo file",
 };
+
+const GEN_FORMATS = [
+  { id: "docx", label: "Word" },
+  { id: "pptx", label: "PowerPoint" },
+  { id: "xlsx", label: "Excel" },
+  { id: "pdf", label: "PDF" },
+] as const;
 
 function formatBytes(n: number | null) {
   if (!n) return "";
@@ -43,6 +51,7 @@ export default function TaskDetailPage() {
   const [editResultText, setEditResultText] = useState("");
   const [savingResult, setSavingResult] = useState(false);
   const [feedbackFile, setFeedbackFile] = useState<File | null>(null);
+  const [generatingFormat, setGeneratingFormat] = useState<string | null>(null);
   const [approvedFiles, setApprovedFiles] = useState<TaskApprovedFile[]>([]);
   const [uploadingApproved, setUploadingApproved] = useState(false);
   const [showApprovedForm, setShowApprovedForm] = useState(false);
@@ -251,6 +260,25 @@ export default function TaskDetailPage() {
     await load();
   }
 
+  // Tạo file thật (docx/pptx/xlsx/pdf) — Claude viết code trong sandbox, tự kiểm tra file (mất 1–5 phút)
+  async function generateFile(format: string) {
+    setGeneratingFormat(format);
+    setError(null);
+    try {
+      const res = await authedFetch(`/api/tasks/${id}/generate-file`, {
+        method: "POST",
+        body: JSON.stringify({ format }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Tạo file lỗi");
+      await load();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setGeneratingFormat(null);
+    }
+  }
+
   async function saveMeta(patch: Record<string, any>) {
     setError(null);
     const res = await authedFetch(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
@@ -325,7 +353,7 @@ export default function TaskDetailPage() {
       .filter((h): h is TaskHistoryEntry => !!h)
       .map((h) => h.id)
   );
-  const commentTimeline = history.filter((h) => !pairedResultIds.has(h.id));
+  const commentTimeline = history.filter((h) => !pairedResultIds.has(h.id) && h.type !== "file_generated");
 
   return (
     <div className="space-y-4">
@@ -535,6 +563,48 @@ export default function TaskDetailPage() {
                   ? isCeoTask ? "CEO phân việc lại theo phản hồi" : "Chạy lại theo phản hồi"
                   : isCeoTask ? "CEO phân tích & giao việc" : "Giao cho agent xử lý"}
             </button>
+          )}
+
+          {task.result_text && (
+            <div className="card space-y-2">
+              <div className="text-xs text-ink-muted">🪄 Tạo file bằng AI (chất lượng cao)</div>
+              <p className="text-[11px] text-ink-muted !mt-1 leading-relaxed">
+                Claude viết code tạo file thật trong sandbox, tự kiểm tra định dạng — như Claude Cowork. Mất 1–5 phút.
+              </p>
+              <div className="grid grid-cols-2 gap-1.5">
+                {GEN_FORMATS.map((f) => (
+                  <button
+                    key={f.id}
+                    onClick={() => generateFile(f.id)}
+                    disabled={generatingFormat !== null}
+                    className="border border-black/10 rounded-lg px-2 py-1.5 text-xs font-semibold hover:bg-black/5 disabled:opacity-50"
+                  >
+                    {generatingFormat === f.id ? "Đang tạo..." : f.label}
+                  </button>
+                ))}
+              </div>
+              {generatingFormat && (
+                <p className="text-[11px] text-status-warning font-semibold">
+                  ⏳ AI đang viết code và kiểm tra file — đừng rời trang (1–5 phút)...
+                </p>
+              )}
+              {history.filter((h) => h.type === "file_generated" && h.file_url).length > 0 && (
+                <div className="divide-y divide-black/5 pt-1">
+                  {history
+                    .filter((h) => h.type === "file_generated" && h.file_url)
+                    .map((h) => (
+                      <div key={h.id} className="py-1.5 text-sm">
+                        <a href={h.file_url!} target="_blank" rel="noopener noreferrer" className="font-medium text-series-1 hover:underline block truncate">
+                          📄 {h.file_name}
+                        </a>
+                        <span className="text-[11px] text-ink-muted">
+                          {userName(h.created_by)} · {new Date(h.created_at).toLocaleString("vi-VN")}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
           )}
 
           {task.status === "review" && isAdmin && (

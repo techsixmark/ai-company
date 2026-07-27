@@ -22,7 +22,7 @@ export interface ClarifyQA {
   answer: string;
 }
 
-export type TaskHistoryType = "feedback" | "result_edit" | "agent_run";
+export type TaskHistoryType = "feedback" | "result_edit" | "agent_run" | "file_generated";
 
 export interface TaskHistoryEntry {
   id: string;

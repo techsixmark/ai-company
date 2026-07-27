@@ -5,10 +5,20 @@ export interface ChangelogEntry {
   changes: string[];
 }
 
-export const APP_VERSION = "0.10.0";
+export const APP_VERSION = "0.11.0";
 
 // Mới nhất đứng đầu. Mỗi lần release thêm 1 entry và cập nhật APP_VERSION.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.11.0",
+    date: "2026-07-27",
+    title: "Tạo file chất lượng Cowork & nâng cấp model AI",
+    changes: [
+      "Nút '🪄 Tạo file bằng AI': Claude viết code Python trong sandbox tạo file Word/PowerPoint/Excel/PDF thật, tự kiểm tra định dạng — cùng cơ chế Claude Cowork dùng",
+      "File AI tạo tự lưu vào kho của task, ghi lịch sử và tính token",
+      "Nâng cấp model agent lên Claude Sonnet 5 (thông minh hơn, cùng chi phí); tạo file dùng Claude Opus 5",
+    ],
+  },
   {
     version: "0.10.0",
     date: "2026-07-27",

@@ -1,6 +1,9 @@
-export const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5";
+export const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
 
-export async function callClaude(apiKey: string, system: string, user: string, maxTokens = 2048) {
+// Model riêng cho tạo file chất lượng cao (viết code python-docx/pptx trong sandbox) — mặc định Opus
+export const FILE_GEN_MODEL = process.env.ANTHROPIC_FILE_MODEL || "claude-opus-5";
+
+export async function callClaude(apiKey: string, system: string, user: string, maxTokens = 8000) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -24,6 +27,75 @@ export async function callClaude(apiKey: string, system: string, user: string, m
       output: json.usage?.output_tokens || 0,
     },
   };
+}
+
+// ---- Tạo file thật (docx/pptx/xlsx/pdf) bằng Agent Skills + code execution ----
+// Đây là cùng cơ chế Claude Cowork dùng: Claude viết code Python (python-docx, python-pptx...)
+// trong sandbox của Anthropic, tự chạy, tự kiểm tra và sửa file cho đến khi đạt — chất lượng
+// cao hơn hẳn chuyển đổi markdown cơ học. File tạo ra được trả về qua Files API dạng file_id.
+
+export type FileSkillId = "docx" | "pptx" | "xlsx" | "pdf";
+
+const SKILLS_BETAS = "code-execution-2025-08-25,skills-2025-10-02";
+const FILES_BETA = "files-api-2025-04-14";
+
+function collectFileIds(node: any, ids: Set<string> = new Set()): Set<string> {
+  if (!node || typeof node !== "object") return ids;
+  if (Array.isArray(node)) {
+    node.forEach((n) => collectFileIds(n, ids));
+    return ids;
+  }
+  if (typeof node.file_id === "string") ids.add(node.file_id);
+  Object.values(node).forEach((v) => collectFileIds(v, ids));
+  return ids;
+}
+
+export async function generateFileWithSkills(
+  apiKey: string,
+  { skillId, prompt, maxTokens = 16000 }: { skillId: FileSkillId; prompt: string; maxTokens?: number }
+) {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-beta": SKILLS_BETAS,
+    },
+    body: JSON.stringify({
+      model: FILE_GEN_MODEL,
+      max_tokens: maxTokens,
+      container: { skills: [{ type: "anthropic", skill_id: skillId, version: "latest" }] },
+      tools: [{ type: "code_execution_20260521", name: "code_execution" }],
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+  if (!res.ok) throw new Error(`Anthropic API lỗi (tạo file): ${await res.text()}`);
+  const json = await res.json();
+  return {
+    fileIds: Array.from(collectFileIds(json.content)),
+    text: json.content?.map((c: any) => c.text).filter(Boolean).join("\n") || "",
+    usage: {
+      input: json.usage?.input_tokens || 0,
+      output: json.usage?.output_tokens || 0,
+    },
+  };
+}
+
+export async function getAnthropicFileMetadata(apiKey: string, fileId: string) {
+  const res = await fetch(`https://api.anthropic.com/v1/files/${fileId}`, {
+    headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-beta": FILES_BETA },
+  });
+  if (!res.ok) throw new Error(`Files API lỗi (metadata): ${await res.text()}`);
+  return (await res.json()) as { filename: string; mime_type: string; size_bytes: number };
+}
+
+export async function downloadAnthropicFile(apiKey: string, fileId: string): Promise<ArrayBuffer> {
+  const res = await fetch(`https://api.anthropic.com/v1/files/${fileId}/content`, {
+    headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-beta": FILES_BETA },
+  });
+  if (!res.ok) throw new Error(`Files API lỗi (download): ${await res.text()}`);
+  return res.arrayBuffer();
 }
 
 export function extractJsonArray(text: string): any[] {
