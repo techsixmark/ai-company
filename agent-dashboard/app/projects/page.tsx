@@ -4,10 +4,12 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import type { Profile, Project, Task } from "@/lib/types";
+import { estimateCost } from "@/lib/pricing";
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [costByProject, setCostByProject] = useState<Map<string, number>>(new Map());
   const [me, setMe] = useState<Profile | null>(null);
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -32,8 +34,30 @@ export default function ProjectsPage() {
       supabase.from("profiles").select("*").eq("id", uid).single(),
     ]);
     setProjects((pjs as Project[]) || []);
-    setTasks((tks as Task[]) || []);
+    const allTasks = (tks as Task[]) || [];
+    setTasks(allTasks);
     setMe(p as Profile);
+
+    // Chi phí ước tính theo dự án — gộp token của mọi task (kể cả task con) qua project_id
+    const projectByTaskId = new Map(allTasks.map((t) => [t.id, t.project_id]));
+    const taskIds = allTasks.map((t) => t.id);
+    if (taskIds.length) {
+      const { data: usage } = await supabase.from("usage_logs").select("task_id, input_tokens, output_tokens").in("task_id", taskIds);
+      const tokensByProject = new Map<string, { in: number; out: number }>();
+      ((usage as { task_id: string; input_tokens: number; output_tokens: number }[]) || []).forEach((u) => {
+        const pid = projectByTaskId.get(u.task_id);
+        if (!pid) return;
+        const acc = tokensByProject.get(pid) || { in: 0, out: 0 };
+        acc.in += u.input_tokens;
+        acc.out += u.output_tokens;
+        tokensByProject.set(pid, acc);
+      });
+      const costs = new Map<string, number>();
+      tokensByProject.forEach((v, pid) => costs.set(pid, estimateCost(v.in, v.out)));
+      setCostByProject(costs);
+    } else {
+      setCostByProject(new Map());
+    }
   }
 
   useEffect(() => {
@@ -137,6 +161,8 @@ export default function ProjectsPage() {
           const review = pTasks.filter((t) => t.status === "review").length;
           const pct = pTasks.length ? Math.round((done / pTasks.length) * 100) : 0;
           const canManage = me?.role === "admin" || me?.id === p.created_by;
+          const spend = costByProject.get(p.id) || 0;
+          const budgetPct = p.budget_usd && p.budget_usd > 0 ? (spend / p.budget_usd) * 100 : null;
           return (
             <div key={p.id} className={`card space-y-2.5 ${p.status === "archived" ? "opacity-60" : ""}`}>
               <div className="flex items-start justify-between gap-2">
@@ -158,6 +184,20 @@ export default function ProjectsPage() {
                 <span className="text-ink-secondary">{pTasks.length} task</span>
                 <span className="text-series-1">{review} chờ duyệt</span>
                 <span className="text-status-good">{done} đã duyệt</span>
+              </div>
+              <div className="text-xs">
+                <span className="text-ink-muted">💰 Chi phí: </span>
+                <span
+                  className={`font-semibold ${
+                    budgetPct != null && budgetPct >= 100 ? "text-status-critical" : budgetPct != null && budgetPct >= 80 ? "text-status-warning" : ""
+                  }`}
+                >
+                  ${spend.toFixed(2)}
+                  {p.budget_usd ? ` / $${p.budget_usd.toFixed(2)}` : ""}
+                </span>
+                {budgetPct != null && budgetPct >= 80 && (
+                  <span className="ml-1">{budgetPct >= 100 ? "⚠️ đã vượt" : "⚠️ sắp chạm"}</span>
+                )}
               </div>
               {canManage && (
                 <div className="flex gap-3 pt-1 border-t border-black/5">

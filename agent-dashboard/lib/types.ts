@@ -60,6 +60,7 @@ export interface Project {
   name: string;
   description: string | null;
   status: "active" | "archived";
+  budget_usd: number | null;
   created_by: string;
   created_at: string;
 }
