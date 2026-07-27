@@ -5,10 +5,19 @@ export interface ChangelogEntry {
   changes: string[];
 }
 
-export const APP_VERSION = "0.13.0";
+export const APP_VERSION = "0.13.1";
 
 // Mới nhất đứng đầu. Mỗi lần release thêm 1 entry và cập nhật APP_VERSION.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.13.1",
+    date: "2026-07-27",
+    title: "Thu gọn kết quả agent, đưa đánh giá QA lên trên",
+    changes: [
+      "Đánh giá của QA agent giờ hiện phía trên kết quả agent trên trang chi tiết task — thấy nhận xét ngay, không cần cuộn qua nội dung dài",
+      "Kết quả agent dài tự thu gọn (6 dòng), bấm '▾ Xem thêm' / '▴ Thu gọn' để mở rộng hoặc đóng lại",
+    ],
+  },
   {
     version: "0.13.0",
     date: "2026-07-27",

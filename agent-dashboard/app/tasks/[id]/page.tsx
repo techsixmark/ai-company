@@ -65,6 +65,7 @@ export default function TaskDetailPage() {
   const [exporting, setExporting] = useState(false);
   const [history, setHistory] = useState<TaskHistoryEntry[]>([]);
   const [editingResult, setEditingResult] = useState(false);
+  const [resultExpanded, setResultExpanded] = useState(false);
   const [editResultText, setEditResultText] = useState("");
   const [savingResult, setSavingResult] = useState(false);
   const [feedbackFile, setFeedbackFile] = useState<File | null>(null);
@@ -474,6 +475,16 @@ export default function TaskDetailPage() {
             </div>
           )}
 
+          {task.qa_score != null && (
+            <div className={`card space-y-1.5 border-l-4 ${task.qa_score >= 9 ? "!border-l-status-good" : task.qa_score >= 6 ? "!border-l-status-warning" : "!border-l-status-critical"}`}>
+              <div className="flex items-center gap-2">
+                <div className="text-xs text-ink-muted">🧪 QA agent tự kiểm tra chéo</div>
+                <QaBadge score={task.qa_score} />
+              </div>
+              {task.qa_notes && <p className="text-sm whitespace-pre-wrap">{task.qa_notes}</p>}
+            </div>
+          )}
+
           {task.result_text && (
             <div className="card space-y-2">
               <div className="flex items-center justify-between gap-2 relative">
@@ -521,18 +532,18 @@ export default function TaskDetailPage() {
                   </div>
                 </div>
               ) : (
-                <p className="text-sm whitespace-pre-wrap">{task.result_text}</p>
+                <>
+                  <p className={`text-sm whitespace-pre-wrap ${resultExpanded ? "" : "line-clamp-6"}`}>{task.result_text}</p>
+                  {task.result_text.length > 400 && (
+                    <button
+                      onClick={() => setResultExpanded(!resultExpanded)}
+                      className="text-xs font-semibold text-series-2 hover:underline"
+                    >
+                      {resultExpanded ? "▴ Thu gọn" : "▾ Xem thêm"}
+                    </button>
+                  )}
+                </>
               )}
-            </div>
-          )}
-
-          {task.qa_score != null && (
-            <div className={`card space-y-1.5 border-l-4 ${task.qa_score >= 9 ? "!border-l-status-good" : task.qa_score >= 6 ? "!border-l-status-warning" : "!border-l-status-critical"}`}>
-              <div className="flex items-center gap-2">
-                <div className="text-xs text-ink-muted">🧪 QA agent tự kiểm tra chéo</div>
-                <QaBadge score={task.qa_score} />
-              </div>
-              {task.qa_notes && <p className="text-sm whitespace-pre-wrap">{task.qa_notes}</p>}
             </div>
           )}
 
