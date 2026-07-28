@@ -6,13 +6,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const token = getBearerToken(req);
   if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return NextResponse.json(
-      { error: "Chưa cấu hình ANTHROPIC_API_KEY trên server (Vercel → Settings → Environment Variables)." },
-      { status: 500 }
-    );
-  }
-
+  // Không kiểm tra ANTHROPIC_API_KEY cố định ở đây nữa — runTaskAgent tự xác định key cần thiết
+  // theo nhà cung cấp AI đã chọn cho phòng ban (Anthropic/OpenAI/Google), có thể khác nhau mỗi task.
   const supabase = createServerClientForUser(token);
 
   const { data: userData } = await supabase.auth.getUser();

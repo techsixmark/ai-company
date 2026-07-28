@@ -1,4 +1,5 @@
-import { ANTHROPIC_MODEL, callClaude, extractJsonArray } from "@/lib/anthropic";
+import { extractJsonArray } from "@/lib/anthropic";
+import { AIProvider, DEFAULT_MODELS, callAI, resolveApiKey } from "@/lib/ai-providers";
 
 // Lỗi do hết quota / rate-limit / hết credit — nên tự động thử lại sau, khác với lỗi logic (JSON hỏng...) cần người can thiệp.
 export function isRetryableAnthropicError(message: string): boolean {
@@ -47,11 +48,29 @@ function taskContext(task: any): string {
 // Thực thi 1 task bằng AI agent (nhánh CEO phân việc, hoặc nhánh phòng ban thực thi) — dùng chung cho
 // route POST /api/tasks/[id]/run (người dùng bấm) và cron tự động thử lại (dùng service-role client).
 export async function runTaskAgent(supabase: any, task: any, userId: string) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new RunError("Chưa cấu hình ANTHROPIC_API_KEY trên server.", false);
-
   const { data: departments } = await supabase.from("departments").select("*");
   const department = departments?.find((d: any) => d.id === task.department_id);
+  const qaDepartment = departments?.find((d: any) => d.id === "qa");
+
+  const { data: companySettings } = await supabase.from("company_settings").select("*").single();
+
+  // Mỗi phòng ban tự chọn được nhà cung cấp AI + model riêng (để trống = dùng mặc định công ty) —
+  // giống cách các nền tảng multi-agent gán model khác nhau theo vai trò (CEO dùng model mạnh để
+  // điều phối, QA dùng model rẻ để chấm điểm nhanh...).
+  function resolveProviderModel(dept: any): { provider: AIProvider; model: string } {
+    const provider: AIProvider = dept?.ai_provider || companySettings?.ai_provider || "anthropic";
+    const model = dept?.ai_model || (dept?.ai_provider ? null : companySettings?.ai_model) || DEFAULT_MODELS[provider];
+    return { provider, model };
+  }
+
+  function requireApiKey(provider: AIProvider): string {
+    const key = resolveApiKey(provider);
+    if (!key) throw new RunError(`Chưa cấu hình API key cho nhà cung cấp AI đang chọn (${provider}) trên server.`, false);
+    return key;
+  }
+
+  const { provider, model } = resolveProviderModel(department);
+  const apiKey = requireApiKey(provider);
 
   // Mẫu hướng dẫn trình bày/nội dung do admin quản lý ở trang "Mẫu nội dung" — chèn vào prompt để kết quả chuẩn chỉnh hơn
   const { data: generalTemplate } = await supabase
@@ -62,11 +81,11 @@ export async function runTaskAgent(supabase: any, task: any, userId: string) {
 
   await supabase.from("tasks").update({ status: "running" }).eq("id", task.id);
 
-  async function logUsage(usage: { input: number; output: number }) {
+  async function logUsage(usage: { input: number; output: number }, usedModel: string) {
     await supabase.from("usage_logs").insert({
       task_id: task.id,
       department_id: task.department_id,
-      model: ANTHROPIC_MODEL,
+      model: usedModel,
       input_tokens: usage.input,
       output_tokens: usage.output,
       created_by: userId,
@@ -92,11 +111,11 @@ export async function runTaskAgent(supabase: any, task: any, userId: string) {
 
       let raw: string, usage: { input: number; output: number };
       try {
-        ({ text: raw, usage } = await callClaude(apiKey, system, user, 3000));
+        ({ text: raw, usage } = await callAI(provider, model, apiKey, system, user, 3000));
       } catch (err: any) {
         throw new RunError(err.message, isRetryableAnthropicError(err.message));
       }
-      await logUsage(usage);
+      await logUsage(usage, model);
 
       const validIds = new Set((departments || []).filter((d: any) => d.id !== "ceo").map((d: any) => d.id));
       const subtasks = extractJsonArray(raw).filter(
@@ -155,11 +174,11 @@ export async function runTaskAgent(supabase: any, task: any, userId: string) {
 
     let text: string, usage: { input: number; output: number };
     try {
-      ({ text, usage } = await callClaude(apiKey, system, user));
+      ({ text, usage } = await callAI(provider, model, apiKey, system, user));
     } catch (err: any) {
       throw new RunError(err.message, isRetryableAnthropicError(err.message));
     }
-    await logUsage(usage);
+    await logUsage(usage, model);
     const resultText = text || "(không có nội dung trả về)";
 
     const { data: updated, error: updateError } = await supabase
@@ -181,8 +200,10 @@ export async function runTaskAgent(supabase: any, task: any, userId: string) {
       if (task.expected_outcome) qaUser += `\n\nOUTCOME ĐÃ CAM KẾT:\n${task.expected_outcome}`;
       qaUser += `\n\nKẾT QUẢ CẦN CHẤM:\n${resultText}`;
 
-      const { text: qaRaw, usage: qaUsage } = await callClaude(apiKey, qaSystem, qaUser, 2000);
-      await logUsage(qaUsage);
+      const { provider: qaProvider, model: qaModel } = resolveProviderModel(qaDepartment);
+      const qaApiKey = requireApiKey(qaProvider);
+      const { text: qaRaw, usage: qaUsage } = await callAI(qaProvider, qaModel, qaApiKey, qaSystem, qaUser, 2000);
+      await logUsage(qaUsage, qaModel);
 
       const match = qaRaw.match(/\{[\s\S]*\}/);
       if (match) {

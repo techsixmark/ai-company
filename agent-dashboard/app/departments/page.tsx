@@ -5,6 +5,9 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import type { Department, Profile, Task } from "@/lib/types";
 import { DEPT_EMOJI, seriesColor, StatusBadge } from "@/components/Badges";
+import { PROVIDER_LABEL, DEFAULT_MODELS, AIProvider } from "@/lib/ai-provider-meta";
+
+const PROVIDER_OPTIONS: ("" | AIProvider)[] = ["", "anthropic", "openai", "google"];
 
 export default function DepartmentsPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -15,6 +18,8 @@ export default function DepartmentsPage() {
   const [editName, setEditName] = useState("");
   const [editRole, setEditRole] = useState("");
   const [editGoal, setEditGoal] = useState("");
+  const [editProvider, setEditProvider] = useState<"" | AIProvider>("");
+  const [editModel, setEditModel] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,6 +52,8 @@ export default function DepartmentsPage() {
     setEditName(d.name);
     setEditRole(d.agent_role);
     setEditGoal(d.goal);
+    setEditProvider((d.ai_provider as AIProvider) || "");
+    setEditModel(d.ai_model || "");
     setError(null);
   }
 
@@ -55,7 +62,13 @@ export default function DepartmentsPage() {
     setError(null);
     const { error: updateError } = await supabase
       .from("departments")
-      .update({ name: editName, agent_role: editRole, goal: editGoal })
+      .update({
+        name: editName,
+        agent_role: editRole,
+        goal: editGoal,
+        ai_provider: editProvider || null,
+        ai_model: editProvider && editModel.trim() ? editModel.trim() : null,
+      })
       .eq("id", id);
     if (updateError) {
       setError(updateError.message);
@@ -115,6 +128,26 @@ export default function DepartmentsPage() {
                         <label className="text-[11px] text-ink-muted">Mục tiêu</label>
                         <textarea rows={3} className={inputCls} value={editGoal} onChange={(e) => setEditGoal(e.target.value)} />
                       </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[11px] text-ink-muted">Nhà cung cấp AI</label>
+                          <select className={inputCls} value={editProvider} onChange={(e) => setEditProvider(e.target.value as "" | AIProvider)}>
+                            {PROVIDER_OPTIONS.map((p) => (
+                              <option key={p} value={p}>{p ? PROVIDER_LABEL[p] : "— Mặc định công ty —"}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[11px] text-ink-muted">Model</label>
+                          <input
+                            className={inputCls}
+                            value={editModel}
+                            onChange={(e) => setEditModel(e.target.value)}
+                            disabled={!editProvider}
+                            placeholder={editProvider ? DEFAULT_MODELS[editProvider] : "—"}
+                          />
+                        </div>
+                      </div>
                       <div className="flex gap-2">
                         <button onClick={() => saveEdit(d.id)} disabled={saving} className="btn-good !px-3 !py-1 !text-xs">
                           {saving ? "Đang lưu..." : "Lưu"}
@@ -136,6 +169,11 @@ export default function DepartmentsPage() {
                       </div>
                       <div className="text-xs text-ink-muted !mt-0">{d.agent_role}</div>
                       <p className="text-sm text-ink-secondary leading-relaxed !mt-1">{d.goal}</p>
+                      {d.ai_provider && (
+                        <span className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full bg-black/5 text-ink-muted">
+                          🤖 {PROVIDER_LABEL[d.ai_provider]}{d.ai_model ? ` · ${d.ai_model}` : ""}
+                        </span>
+                      )}
                     </>
                   )}
                 </div>

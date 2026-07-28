@@ -5,10 +5,22 @@ export interface ChangelogEntry {
   changes: string[];
 }
 
-export const APP_VERSION = "0.15.2";
+export const APP_VERSION = "0.16.0";
 
 // Mới nhất đứng đầu. Mỗi lần release thêm 1 entry và cập nhật APP_VERSION.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.16.0",
+    date: "2026-07-27",
+    title: "Chọn nhà cung cấp AI riêng cho từng phòng ban",
+    changes: [
+      "Mỗi phòng ban chọn được nhà cung cấp AI riêng (Anthropic Claude / OpenAI GPT / Google Gemini) + model cụ thể ở trang Phòng ban — để trống dùng mặc định công ty",
+      "Trang Token usage thêm mục 'Nhà cung cấp AI mặc định' cho toàn công ty",
+      "Cần thêm API key tương ứng trên Vercel (OPENAI_API_KEY / GOOGLE_API_KEY) trước khi chọn provider đó — chưa cấu hình sẽ báo lỗi rõ khi chạy task",
+      "Riêng '🪄 Tạo file bằng AI' vẫn luôn dùng Anthropic (phụ thuộc Agent Skills, chỉ Anthropic hỗ trợ), không đổi theo lựa chọn phòng ban",
+      "Lưu ý: chi phí ước tính (Usage, Dự án) hiện vẫn tính theo đơn giá Claude Sonnet cho mọi provider — chưa chính xác 100% nếu dùng OpenAI/Gemini",
+    ],
+  },
   {
     version: "0.15.2",
     date: "2026-07-27",

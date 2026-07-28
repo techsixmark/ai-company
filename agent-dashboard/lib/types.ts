@@ -7,6 +7,8 @@ export interface Department {
   goal: string;
   agent_role: string;
   color_slot: number;
+  ai_provider: "anthropic" | "openai" | "google" | null;
+  ai_model: string | null;
 }
 
 export interface ContentTemplate {
@@ -93,5 +95,7 @@ export interface Task {
 export interface CompanySettings {
   id: boolean;
   monthly_budget_usd: number | null;
+  ai_provider: "anthropic" | "openai" | "google";
+  ai_model: string | null;
   updated_at: string;
 }

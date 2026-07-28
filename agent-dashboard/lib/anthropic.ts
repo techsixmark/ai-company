@@ -8,7 +8,7 @@ export const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
 // Sonnet 5 vẫn rất gần Opus cho tác vụ này.
 export const FILE_GEN_MODEL = process.env.ANTHROPIC_FILE_MODEL || "claude-sonnet-5";
 
-export async function callClaude(apiKey: string, system: string, user: string, maxTokens = 8000) {
+export async function callClaude(apiKey: string, system: string, user: string, maxTokens = 8000, model = ANTHROPIC_MODEL) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -17,7 +17,7 @@ export async function callClaude(apiKey: string, system: string, user: string, m
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: ANTHROPIC_MODEL,
+      model,
       max_tokens: maxTokens,
       system,
       messages: [{ role: "user", content: user }],

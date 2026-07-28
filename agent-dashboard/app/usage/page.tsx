@@ -6,6 +6,9 @@ import { supabase } from "@/lib/supabase/client";
 import type { CompanySettings, Department, Profile, Project } from "@/lib/types";
 import { DEPT_EMOJI, seriesColor } from "@/components/Badges";
 import { estimateCost, PRICE_IN, PRICE_OUT } from "@/lib/pricing";
+import { AIProvider, DEFAULT_MODELS, PROVIDER_LABEL } from "@/lib/ai-provider-meta";
+
+const PROVIDER_LIST: AIProvider[] = ["anthropic", "openai", "google"];
 
 interface UsageLog {
   id: string;
@@ -32,6 +35,9 @@ export default function UsagePage() {
   const [settings, setSettings] = useState<CompanySettings | null>(null);
   const [budgetInput, setBudgetInput] = useState("");
   const [savingBudget, setSavingBudget] = useState(false);
+  const [providerInput, setProviderInput] = useState<AIProvider>("anthropic");
+  const [modelInput, setModelInput] = useState("");
+  const [savingProvider, setSavingProvider] = useState(false);
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
   const [days, setDays] = useState(30);
 
@@ -60,7 +66,11 @@ export default function UsagePage() {
     setProfiles(profs);
     setMe(profs.find((p) => p.id === uid) || null);
     setSettings((cs as CompanySettings) || null);
-    if (cs) setBudgetInput(cs.monthly_budget_usd != null ? String(cs.monthly_budget_usd) : "");
+    if (cs) {
+      setBudgetInput(cs.monthly_budget_usd != null ? String(cs.monthly_budget_usd) : "");
+      setProviderInput((cs.ai_provider as AIProvider) || "anthropic");
+      setModelInput(cs.ai_model || "");
+    }
     setProjects((pjs as Project[]) || []);
     setProjectByTaskId(new Map(((tks as { id: string; project_id: string }[]) || []).map((t) => [t.id, t.project_id])));
   }
@@ -76,6 +86,16 @@ export default function UsagePage() {
     await supabase.from("company_settings").update({ monthly_budget_usd: value, updated_at: new Date().toISOString() }).eq("id", true);
     await load();
     setSavingBudget(false);
+  }
+
+  async function saveProvider() {
+    setSavingProvider(true);
+    await supabase
+      .from("company_settings")
+      .update({ ai_provider: providerInput, ai_model: modelInput.trim() || null, updated_at: new Date().toISOString() })
+      .eq("id", true);
+    await load();
+    setSavingProvider(false);
   }
 
   // Chi phí tháng hiện tại (từ đầu tháng đến nay) để so với ngân sách — độc lập với bộ lọc "N ngày qua"
@@ -205,6 +225,38 @@ export default function UsagePage() {
               {budgetPct >= 100 ? "⚠️ Đã vượt ngân sách tháng này." : "⚠️ Sắp chạm ngân sách tháng này."}
             </p>
           )}
+        </section>
+      )}
+
+      {isAdmin && (
+        <section className="card space-y-2">
+          <div>
+            <div className="text-xs text-ink-muted mb-0.5">Nhà cung cấp AI mặc định</div>
+            <p className="text-xs text-ink-muted !mt-0">
+              Áp dụng cho mọi phòng ban chưa tự chọn riêng ở trang Phòng ban. Cần thêm API key tương ứng trên Vercel
+              (ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_API_KEY) trước khi đổi.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <select
+              className="border border-black/10 rounded-md px-2.5 py-1.5 text-sm"
+              value={providerInput}
+              onChange={(e) => setProviderInput(e.target.value as AIProvider)}
+            >
+              {PROVIDER_LIST.map((p) => (
+                <option key={p} value={p}>{PROVIDER_LABEL[p]}</option>
+              ))}
+            </select>
+            <input
+              className="w-48 border border-black/10 rounded-md px-2.5 py-1.5 text-sm"
+              value={modelInput}
+              onChange={(e) => setModelInput(e.target.value)}
+              placeholder={DEFAULT_MODELS[providerInput]}
+            />
+            <button onClick={saveProvider} disabled={savingProvider} className="btn-primary !px-3 !py-1.5 !text-xs">
+              {savingProvider ? "Đang lưu..." : "Lưu"}
+            </button>
+          </div>
         </section>
       )}
 

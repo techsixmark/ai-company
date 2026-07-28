@@ -14,8 +14,8 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!process.env.ANTHROPIC_API_KEY || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    return NextResponse.json({ error: "Thiếu ANTHROPIC_API_KEY hoặc SUPABASE_SERVICE_ROLE_KEY." }, { status: 500 });
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return NextResponse.json({ error: "Thiếu SUPABASE_SERVICE_ROLE_KEY." }, { status: 500 });
   }
 
   const supabase = createServiceRoleClient();
